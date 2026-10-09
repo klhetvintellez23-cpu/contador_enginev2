@@ -1,0 +1,53 @@
+name: contador_engine
+description: A Flutter application for small entrepreneurs to manage their transactions and debts.
+version: 1.0.5+6
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  provider: ^6.0.5
+  intl: ^0.19.0
+  path_provider: ^2.1.5
+  fl_chart: ^1.2.0
+  share_plus: ^13.0.0
+  screenshot: ^3.0.0
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  uuid: ^4.5.1
+  url_launcher: ^6.3.1
+  local_auth: ^2.3.0
+  flutter_secure_storage: ^10.3.1
+  crypto: ^3.0.5
+  pdf: ^3.11.1
+  image_picker: ^1.2.3
+  file_picker: ^12.0.0-beta.1
+  flutter_local_notifications: ^22.2.0
+  timezone: ^0.11.1
+  flutter_timezone: ^5.1.0
+  # Actualización automática por GitHub Releases
+  package_info_plus: ^10.2.1
+  http: ^1.2.2
+  open_filex: ^4.7.0
+  permission_handler: ^12.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/icons/
+    - assets/fonts/
+  fonts:
+    - family: AppRoboto
+      fonts:
+        - asset: assets/fonts/Roboto-Regular.ttf
+        - asset: assets/fonts/Roboto-Bold.ttf
+          weight: 700

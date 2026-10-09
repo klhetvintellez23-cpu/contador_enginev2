@@ -1,0 +1,104 @@
+name: Build & Release APK
+
+# Se dispara al empujar un tag de versión, p. ej.:
+#   git tag v1.0.1 && git push origin v1.0.1
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versión a publicar (sin la v), p. ej. 1.0.1'
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Calcular versión
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.7'
+          channel: stable
+          cache: true
+
+      # La versión del APK sale del tag, así no hay que acordarse de tocar
+      # pubspec.yaml a mano. El build number usa el número de corrida para que
+      # Android siempre vea un versionCode mayor.
+      - name: Fijar versión desde el tag
+        run: |
+          sed -i "s/^version: .*/version: ${{ steps.version.outputs.version }}+${{ github.run_number }}/" pubspec.yaml
+          grep '^version:' pubspec.yaml
+
+      # Debe ser SIEMPRE la misma llave que la del APK ya instalado, o Android
+      # rechaza la actualización.
+      - name: Restaurar keystore de release
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          storeFile=upload-keystore.jks
+          EOF
+
+      - run: flutter pub get
+
+      - run: flutter build apk --release
+
+      - name: Renombrar APK
+        run: |
+          mv build/app/outputs/flutter-apk/app-release.apk \
+             build/app/outputs/flutter-apk/contador-engine-${{ steps.version.outputs.version }}.apk
+
+      # Las notas que verá el usuario en el diálogo de actualización salen del
+      # bloque "## X.Y.Z" de CHANGELOG.md. Si no existe, se usa un texto genérico.
+      - name: Extraer notas de la versión
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if [ -f CHANGELOG.md ]; then
+            awk -v ver="$VERSION" '
+              $0 ~ ("^## " ver "([^0-9]|$)") {grab=1; next}
+              grab && /^## / {grab=0}
+              grab {print}
+            ' CHANGELOG.md > release_notes.md
+          fi
+          # Quita líneas en blanco iniciales/finales.
+          sed -i -e '/./,$!d' release_notes.md 2>/dev/null || true
+          if [ ! -s release_notes.md ]; then
+            echo "Versión $VERSION. Abre la app para ver las novedades." > release_notes.md
+          fi
+          echo "----- notas del release -----"
+          cat release_notes.md
+
+      # Se publica en el repo PÚBLICO de releases para que la app pueda leer la
+      # API de GitHub sin token; el código fuente sigue en el repo privado.
+      - name: Publicar release
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: klhetvintellez23-cpu/contador-engine-releases
+          token: ${{ secrets.RELEASES_REPO_TOKEN }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: false
+          body_path: release_notes.md
+          files: build/app/outputs/flutter-apk/contador-engine-${{ steps.version.outputs.version }}.apk
