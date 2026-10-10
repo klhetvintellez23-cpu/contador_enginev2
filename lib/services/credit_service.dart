@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:uuid/uuid.dart';
 import '../models/credit_engine.dart';
+import '../models/credit_account.dart';
 import 'local_database_service.dart';
 
 enum ApplicationStatus {
@@ -35,11 +36,28 @@ class CreditService {
       LocalDatabaseService.rowsOf(db.readWorkflow(), 'credit_payments')
           .where((p) => p['applicationId'] == id)
           .toList();
+  Map<String, dynamic>? account(String applicationId) =>
+      LocalDatabaseService.rowsOf(db.readWorkflow(), 'credit_accounts')
+          .where((a) => a['applicationId'] == applicationId)
+          .firstOrNull;
+  CreditLifecycle lifecycle(Map<String, dynamic> app) {
+    final record = account(app['id'] as String);
+    if (record != null) {
+      return record['status'] == 'active'
+          ? CreditLifecycle.active
+          : CreditLifecycle.formalized;
+    }
+    return app['creditLifecycle'] == 'awaitingFormalization'
+        ? CreditLifecycle.awaitingFormalization
+        : CreditLifecycle.legacy;
+  }
+
   Map<String, int> get portfolioSummary {
     var balanceCents = 0, interestPaidCents = 0, overdue = 0, settled = 0;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    for (final app in applications.where((a) => a['status'] == 'approved')) {
+    for (final app in applications.where((a) =>
+        a['status'] == 'approved' && lifecycle(a) == CreditLifecycle.active)) {
       final rows = balance(app);
       var loanBalance = 0;
       var late = false;
@@ -196,18 +214,177 @@ class CreditService {
           final terms =
               CreditTerms.fromMap(Map<String, dynamic>.from(a['terms'] as Map));
           a['approvedAt'] = start.toIso8601String();
-          a['schedule'] = CreditEngine.schedule(terms, start)
+          a['creditLifecycle'] = 'awaitingFormalization';
+          a['quotedSchedule'] = CreditEngine.schedule(terms, start)
               .map((r) => r.toMap())
               .toList();
         }
       }, roles: {UserRole.analyst, UserRole.compliance, UserRole.manager});
-  List<Map<String, dynamic>> balance(Map<String, dynamic> a,
-          {DateTime? asOf}) =>
-      CreditEngine.balances(
-          LocalDatabaseService.rowsOf(a, 'schedule'),
-          payments(a['id'] as String),
-          (((a['terms'] as Map)['lateFee'] as num) * 100).round(),
-          asOf ?? DateTime.now());
+  List<Map<String, dynamic>> balance(Map<String, dynamic> a, {DateTime? asOf}) {
+    final record = account(a['id'] as String);
+    final schedule = record?['status'] == 'active'
+        ? LocalDatabaseService.rowsOf(record!, 'schedule')
+        : lifecycle(a) == CreditLifecycle.legacy
+            ? LocalDatabaseService.rowsOf(a, 'schedule')
+            : <Map<String, dynamic>>[];
+    return CreditEngine.balances(
+        schedule,
+        payments(a['id'] as String),
+        (((a['terms'] as Map)['lateFee'] as num) * 100).round(),
+        asOf ?? DateTime.now());
+  }
+
+  Future<void> formalize(
+          String id, String customerId, String acceptanceReference) =>
+      db.transaction('credito:formalizar:$id', (s) {
+        final app = _find(s, id);
+        if (app['status'] != 'approved' ||
+            app['creditLifecycle'] != 'awaitingFormalization') {
+          throw StateError(
+              'Esta solicitud no está pendiente de formalización.');
+        }
+        if (acceptanceReference.trim().length < 5) {
+          throw ArgumentError('Registra la referencia del acuerdo aceptado.');
+        }
+        if (!LocalDatabaseService.rowsOf(s, 'customers')
+            .any((c) => c['id'].toString() == customerId)) {
+          throw ArgumentError(
+              'Selecciona un cliente existente y verifica su identidad.');
+        }
+        final records = LocalDatabaseService.rowsOf(s, 'credit_accounts');
+        if (records.any((c) => c['applicationId'] == id)) {
+          throw StateError('Esta solicitud ya tiene un crédito vinculado.');
+        }
+        records.add({
+          'id': const Uuid().v4(),
+          'applicationId': id,
+          'ownerId': app['ownerId'],
+          'customerId': customerId,
+          'status': 'formalized',
+          'terms': Map<String, dynamic>.from(app['terms'] as Map),
+          'termsVersion': 1,
+          'acceptanceReference': acceptanceReference.trim(),
+          'formalizedAt': DateTime.now().toIso8601String(),
+          'formalizedBy': db.currentUser!.id,
+          'legacy': false,
+          'schedule': <dynamic>[],
+          'cashPrincipalCents': 0,
+          'cashPaymentBaselineCents': 0,
+        });
+        s['credit_accounts'] = records;
+      });
+
+  Future<void> disburse(String id, DateTime effectiveDate, String reference) =>
+      db.transaction('credito:desembolsar:$id', (s) {
+        final app = _find(s, id);
+        final records = LocalDatabaseService.rowsOf(s, 'credit_accounts');
+        final record =
+            records.where((r) => r['applicationId'] == id).firstOrNull;
+        if (record == null || app['status'] != 'approved') {
+          throw StateError('Formaliza primero el crédito.');
+        }
+        final date = DateTime(
+            effectiveDate.year, effectiveDate.month, effectiveDate.day);
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        final formalized = DateTime.parse(record['formalizedAt'] as String);
+        final firstDay =
+            DateTime(formalized.year, formalized.month, formalized.day);
+        if (reference.trim().length < 3 ||
+            date.isBefore(firstDay) ||
+            date.isAfter(today)) {
+          throw ArgumentError(
+              'Revisa la referencia y la fecha del desembolso.');
+        }
+        if (record['status'] == 'active') {
+          if (record['disbursementReference'] == reference.trim() &&
+              record['disbursedAt'] == date.toIso8601String()) {
+            return;
+          }
+          throw StateError('El crédito ya fue desembolsado.');
+        }
+        if (records.any((r) =>
+            r['status'] == 'active' &&
+            r['disbursementReference'] == reference.trim())) {
+          throw StateError('La referencia de desembolso ya está registrada.');
+        }
+        final terms = CreditTerms.fromMap(
+            Map<String, dynamic>.from(record['terms'] as Map));
+        if (terms.principal > PortfolioLedger.availableCash(s) + .001) {
+          throw StateError(
+              'Capital insuficiente para registrar este desembolso.');
+        }
+        record.addAll({
+          'status': 'active',
+          'disbursedAt': date.toIso8601String(),
+          'disbursementReference': reference.trim(),
+          'disbursedBy': db.currentUser!.id,
+          'activatedAt': now.toIso8601String(),
+          'cashPrincipalCents': (terms.principal * 100).round(),
+          'schedule':
+              CreditEngine.schedule(terms, date).map((r) => r.toMap()).toList(),
+        });
+        s['credit_accounts'] = records;
+      });
+
+  /// Explicit opening reconciliation preserves the old plan and all payments.
+  Future<void> reconcileLegacy(
+          String id, String customerId, DateTime disbursedAt, String evidence,
+          {required bool cashAlreadyIncluded}) =>
+      db.transaction('credito:conciliar:$id', (s) {
+        final app = _find(s, id);
+        final records = LocalDatabaseService.rowsOf(s, 'credit_accounts');
+        if (app['status'] != 'approved' ||
+            app['creditLifecycle'] != null ||
+            records.any((r) => r['applicationId'] == id)) {
+          throw StateError(
+              'Solo puedes conciliar un crédito anterior una vez.');
+        }
+        if (evidence.trim().length < 5 ||
+            disbursedAt.isAfter(DateTime.now()) ||
+            !LocalDatabaseService.rowsOf(s, 'customers')
+                .any((c) => c['id'].toString() == customerId)) {
+          throw ArgumentError(
+              'Verifica cliente, fecha real y evidencia del desembolso anterior.');
+        }
+        final terms =
+            CreditTerms.fromMap(Map<String, dynamic>.from(app['terms'] as Map));
+        final schedule = LocalDatabaseService.rowsOf(app, 'schedule');
+        if (schedule.isEmpty) {
+          throw StateError('Falta el plan anterior; requiere revisión manual.');
+        }
+        CreditEngine.balances(
+            schedule,
+            LocalDatabaseService.rowsOf(s, 'credit_payments')
+                .where((p) => p['applicationId'] == id)
+                .toList(),
+            (terms.lateFee * 100).round(),
+            DateTime.now());
+        records.add({
+          'id': const Uuid().v4(),
+          'applicationId': id,
+          'ownerId': app['ownerId'],
+          'customerId': customerId,
+          'status': 'active',
+          'terms': terms.toMap(),
+          'termsVersion': 1,
+          'legacy': true,
+          'schedule': schedule,
+          'acceptanceReference': evidence.trim(),
+          'disbursementReference': 'conciliacion:$id',
+          'disbursedAt': disbursedAt.toIso8601String(),
+          'formalizedAt': DateTime.now().toIso8601String(),
+          'formalizedBy': db.currentUser!.id,
+          'activatedAt': DateTime.now().toIso8601String(),
+          'disbursedBy': db.currentUser!.id,
+          'cashAlreadyIncluded': cashAlreadyIncluded,
+          'cashPrincipalCents':
+              cashAlreadyIncluded ? 0 : (terms.principal * 100).round(),
+          'cashPaymentBaselineCents':
+              cashAlreadyIncluded ? PortfolioLedger.activePayments(s, id) : 0,
+        });
+        s['credit_accounts'] = records;
+      });
   Future<void> pay(String id, double amount, String reference) =>
       db.transaction('credito:pago:$id', (s) {
         LocalDatabaseService.positive(amount, 'Pago');
@@ -215,8 +392,12 @@ class CreditService {
           throw ArgumentError('Indica una referencia del pago.');
         }
         final a = _find(s, id);
-        if (a['status'] != 'approved') {
-          throw StateError('Solo puedes cobrar préstamos aprobados.');
+        final activeAccount = LocalDatabaseService.rowsOf(s, 'credit_accounts')
+            .where((r) => r['applicationId'] == id && r['status'] == 'active')
+            .firstOrNull;
+        if (a['status'] != 'approved' || activeAccount == null) {
+          throw StateError(
+              'Registra el desembolso o concilia el crédito antes de cobrar.');
         }
         final rows = LocalDatabaseService.rowsOf(s, 'credit_payments');
         if (rows.any((p) =>
@@ -232,6 +413,7 @@ class CreditService {
         final payment = {
           'id': const Uuid().v4(),
           'applicationId': id,
+          'accountId': activeAccount['id'],
           'amountCents': cents,
           'reference': reference.trim(),
           'date': DateTime.now().toIso8601String(),
@@ -240,7 +422,7 @@ class CreditService {
         };
         final all = [...rows, payment];
         CreditEngine.balances(
-            LocalDatabaseService.rowsOf(a, 'schedule'),
+            LocalDatabaseService.rowsOf(activeAccount, 'schedule'),
             all.where((p) => p['applicationId'] == id).toList(),
             (((a['terms'] as Map)['lateFee'] as num) * 100).round(),
             DateTime.now());

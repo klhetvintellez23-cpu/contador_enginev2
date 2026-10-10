@@ -1,3 +1,5 @@
+import '../utils/app_theme.dart';
+import '../widgets/app_ui.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../utils/local_fonts.dart';
@@ -78,8 +80,9 @@ class _CustomerReceiptsScreenState extends State<CustomerReceiptsScreen> {
     final receipts = _filteredReceipts;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FD),
-      body: Column(
+      backgroundColor: AppTheme.background,
+      body: PageFrame(
+          child: Column(
         children: [
           Container(
             padding: EdgeInsets.only(
@@ -89,31 +92,24 @@ class _CustomerReceiptsScreenState extends State<CustomerReceiptsScreen> {
               right: 8,
             ),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  theme.colorScheme.primary,
-                  theme.colorScheme.secondary,
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+              color: AppTheme.background,
               borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(30),
-                bottomRight: Radius.circular(30),
+                bottomLeft: Radius.circular(0),
+                bottomRight: Radius.circular(0),
               ),
             ),
             child: Row(
               children: [
                 IconButton(
                   icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                      color: Colors.white),
+                      color: AppTheme.ink),
                   onPressed: () => Navigator.pop(context),
                 ),
                 Expanded(
                   child: Text(
                     'Comprobantes de ${widget.customer.name.split(' ').first}',
                     style: AppFonts.inter(
-                      color: Colors.white,
+                      color: AppTheme.ink,
                       fontSize: 20,
                       fontWeight: FontWeight.w600,
                       letterSpacing: -0.5,
@@ -124,15 +120,15 @@ class _CustomerReceiptsScreenState extends State<CustomerReceiptsScreen> {
                 if (_selectedRange != null)
                   IconButton(
                     icon:
-                        const Icon(Icons.refresh_rounded, color: Colors.white),
+                        const Icon(Icons.refresh_rounded, color: AppTheme.ink),
                     tooltip: 'Quitar filtro de fecha',
                     onPressed: _clearDateRange,
                   ),
                 IconButton(
                   icon: Icon(Icons.calendar_today_rounded,
                       color: _selectedRange != null
-                          ? Colors.white
-                          : Colors.white.withAlpha(179)),
+                          ? AppTheme.ink
+                          : AppTheme.ink.withAlpha(179)),
                   tooltip: 'Filtrar por fecha',
                   onPressed: _pickDateRange,
                 ),
@@ -200,13 +196,7 @@ class _CustomerReceiptsScreenState extends State<CustomerReceiptsScreen> {
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(20),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withAlpha(10),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
+                              boxShadow: const [],
                             ),
                             child: Row(
                               children: [
@@ -265,7 +255,7 @@ class _CustomerReceiptsScreenState extends State<CustomerReceiptsScreen> {
                       ),
           ),
         ],
-      ),
+      )),
     );
   }
 }

@@ -1,3 +1,5 @@
+import '../widgets/app_ui.dart';
+import '../utils/app_theme.dart';
 import 'package:flutter/material.dart';
 import '../utils/local_fonts.dart';
 import 'package:provider/provider.dart';
@@ -162,50 +164,12 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FD),
-      body: Column(
+      backgroundColor: AppTheme.background,
+      body: PageFrame(
+          child: Column(
         children: [
-          Container(
-            padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top + 12,
-              bottom: 20,
-              left: 12,
-              right: 28,
-            ),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  theme.colorScheme.primary,
-                  theme.colorScheme.secondary
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(30),
-                bottomRight: Radius.circular(30),
-              ),
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                      color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                Text(
-                  'Cuenta y datos',
-                  style: AppFonts.inter(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.5),
-                ),
-              ],
-            ),
-          ),
+          const PageHeading(title: 'Administrar cuenta', back: true),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(24),
@@ -224,10 +188,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(24),
                     border: Border.all(color: const Color(0xFFFECACA)),
-                    boxShadow: [
-                      BoxShadow(
-                          color: Colors.black.withAlpha(5), blurRadius: 10)
-                    ],
+                    boxShadow: const [],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -341,7 +302,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 }

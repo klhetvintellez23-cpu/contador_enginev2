@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/local_database_service.dart';
 import '../utils/app_theme.dart';
+import '../widgets/app_ui.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -66,184 +67,207 @@ class _AuthScreenState extends State<AuthScreen> {
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Icon(Icons.account_balance_wallet_rounded,
-                          size: 42, color: AppTheme.primary),
+                      Reveal(
+                          child: Center(
+                              child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: Image.asset(
+                                      'assets/icons/contador_engine_icon_source.png',
+                                      width: 72,
+                                      height: 72,
+                                      cacheWidth: 144)))),
                       const SizedBox(height: 12),
                       Text('Contador Engine',
                           textAlign: TextAlign.center,
                           style: text.titleLarge
                               ?.copyWith(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 6),
-                      const Text('Tus créditos, paso a paso.',
+                      const Text('Tu negocio, tus clientes y tus préstamos.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: AppTheme.muted)),
                       const SizedBox(height: 32),
-                      Card(
-                          child: Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    Text(
-                                        _registering
-                                            ? 'Crea tu cuenta'
-                                            : 'Te damos la bienvenida',
-                                        style: text.headlineSmall?.copyWith(
-                                            fontWeight: FontWeight.bold)),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                        _registering
-                                            ? 'Regístrate para solicitar un crédito y seguir su avance.'
-                                            : 'Ingresa para continuar con tus solicitudes.',
-                                        style: const TextStyle(
-                                            color: AppTheme.muted,
-                                            height: 1.5)),
-                                    const SizedBox(height: 24),
-                                    if (_registering) ...[
-                                      TextFormField(
-                                          controller: _name,
-                                          enabled: !_busy,
-                                          textCapitalization:
-                                              TextCapitalization.words,
-                                          autofillHints: const [
-                                            AutofillHints.name
-                                          ],
-                                          textInputAction: TextInputAction.next,
-                                          decoration: const InputDecoration(
-                                              labelText: 'Nombre completo',
-                                              prefixIcon:
-                                                  Icon(Icons.person_outline)),
-                                          validator: (v) => (v?.trim().length ??
-                                                      0) <
-                                                  2
-                                              ? 'Escribe tu nombre completo.'
-                                              : null),
-                                      const SizedBox(height: 18),
-                                    ],
-                                    TextFormField(
-                                        controller: _email,
-                                        enabled: !_busy,
-                                        keyboardType:
-                                            TextInputType.emailAddress,
-                                        autocorrect: false,
-                                        autofillHints: const [
-                                          AutofillHints.username
+                      Reveal(
+                          delayMilliseconds: 90,
+                          child: Card(
+                              child: Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        Text(
+                                            _registering
+                                                ? 'Crea tu cuenta'
+                                                : 'Te damos la bienvenida',
+                                            style: text.headlineSmall?.copyWith(
+                                                fontWeight: FontWeight.bold)),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                            _registering
+                                                ? 'Regístrate para solicitar un crédito y seguir su avance.'
+                                                : 'Ingresa para continuar con tu cuenta.',
+                                            style: const TextStyle(
+                                                color: AppTheme.muted,
+                                                height: 1.5)),
+                                        const SizedBox(height: 24),
+                                        if (_registering) ...[
+                                          TextFormField(
+                                              controller: _name,
+                                              enabled: !_busy,
+                                              textCapitalization:
+                                                  TextCapitalization.words,
+                                              autofillHints: const [
+                                                AutofillHints.name
+                                              ],
+                                              textInputAction:
+                                                  TextInputAction.next,
+                                              decoration: const InputDecoration(
+                                                  labelText: 'Nombre completo',
+                                                  prefixIcon: Icon(
+                                                      Icons.person_outline)),
+                                              validator: (v) => (v
+                                                              ?.trim()
+                                                              .length ??
+                                                          0) <
+                                                      2
+                                                  ? 'Escribe tu nombre completo.'
+                                                  : null),
+                                          const SizedBox(height: 18),
                                         ],
-                                        textInputAction: TextInputAction.next,
-                                        decoration: const InputDecoration(
-                                            labelText: 'Correo electrónico',
-                                            hintText: 'nombre@ejemplo.com',
-                                            prefixIcon:
-                                                Icon(Icons.mail_outline)),
-                                        validator: (v) => v == null ||
-                                                !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
-                                                    .hasMatch(v.trim())
-                                            ? 'Escribe un correo válido.'
-                                            : null),
-                                    const SizedBox(height: 18),
-                                    TextFormField(
-                                        controller: _password,
-                                        enabled: !_busy,
-                                        obscureText: _obscure,
-                                        autofillHints: [
-                                          _registering
-                                              ? AutofillHints.newPassword
-                                              : AutofillHints.password
-                                        ],
-                                        textInputAction: TextInputAction.done,
-                                        onFieldSubmitted: (_) => _submit(),
-                                        decoration: InputDecoration(
-                                            labelText: 'Contraseña',
-                                            prefixIcon:
-                                                const Icon(Icons.lock_outline),
-                                            suffixIcon: IconButton(
-                                                tooltip: _obscure
-                                                    ? 'Mostrar contraseña'
-                                                    : 'Ocultar contraseña',
-                                                onPressed: () => setState(
-                                                    () => _obscure = !_obscure),
-                                                icon: Icon(_obscure
-                                                    ? Icons.visibility_outlined
-                                                    : Icons
-                                                        .visibility_off_outlined))),
-                                        validator: (v) => v == null || v.isEmpty
-                                            ? 'Escribe tu contraseña.'
-                                            : null),
-                                    if (!_registering) ...[
-                                      const SizedBox(height: 8),
-                                      CheckboxListTile(
-                                          contentPadding: EdgeInsets.zero,
-                                          controlAffinity:
-                                              ListTileControlAffinity.leading,
-                                          title: const Text(
-                                              'Uso un código de autenticación',
-                                              style: TextStyle(fontSize: 14)),
-                                          value: _useOtp,
-                                          onChanged: _busy
-                                              ? null
-                                              : (v) =>
-                                                  setState(() => _useOtp = v!)),
-                                      if (_useOtp)
                                         TextFormField(
-                                            controller: _otp,
+                                            controller: _email,
                                             enabled: !_busy,
-                                            keyboardType: TextInputType.number,
-                                            maxLength: 6,
-                                            inputFormatters: [
-                                              FilteringTextInputFormatter
-                                                  .digitsOnly
+                                            keyboardType:
+                                                TextInputType.emailAddress,
+                                            autocorrect: false,
+                                            autofillHints: const [
+                                              AutofillHints.username
                                             ],
+                                            textInputAction:
+                                                TextInputAction.next,
                                             decoration: const InputDecoration(
-                                                labelText:
-                                                    'Código de 6 dígitos',
-                                                helperText:
-                                                    'Abre tu aplicación autenticadora.'),
+                                                labelText: 'Correo electrónico',
+                                                hintText: 'nombre@ejemplo.com',
+                                                prefixIcon:
+                                                    Icon(Icons.mail_outline)),
+                                            validator: (v) => v == null ||
+                                                    !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+                                                        .hasMatch(v.trim())
+                                                ? 'Escribe un correo válido.'
+                                                : null),
+                                        const SizedBox(height: 18),
+                                        TextFormField(
+                                            controller: _password,
+                                            enabled: !_busy,
+                                            obscureText: _obscure,
+                                            autofillHints: [
+                                              _registering
+                                                  ? AutofillHints.newPassword
+                                                  : AutofillHints.password
+                                            ],
+                                            textInputAction: TextInputAction
+                                                .done,
+                                            onFieldSubmitted: (_) => _submit(),
+                                            decoration: InputDecoration(
+                                                labelText: 'Contraseña',
+                                                prefixIcon: const Icon(
+                                                    Icons.lock_outline),
+                                                suffixIcon: IconButton(
+                                                    tooltip: _obscure
+                                                        ? 'Mostrar contraseña'
+                                                        : 'Ocultar contraseña',
+                                                    onPressed: () => setState(
+                                                        () =>
+                                                            _obscure =
+                                                                !_obscure),
+                                                    icon: Icon(_obscure
+                                                        ? Icons
+                                                            .visibility_outlined
+                                                        : Icons
+                                                            .visibility_off_outlined))),
                                             validator: (v) =>
-                                                _useOtp && (v?.length ?? 0) != 6
+                                                v == null || v.isEmpty
+                                                    ? 'Escribe tu contraseña.'
+                                                    : null),
+                                        if (!_registering) ...[
+                                          const SizedBox(height: 8),
+                                          CheckboxListTile(
+                                              contentPadding: EdgeInsets.zero,
+                                              controlAffinity:
+                                                  ListTileControlAffinity
+                                                      .leading,
+                                              title: const Text(
+                                                  'Uso un código de autenticación',
+                                                  style:
+                                                      TextStyle(fontSize: 14)),
+                                              value: _useOtp,
+                                              onChanged: _busy
+                                                  ? null
+                                                  : (v) => setState(
+                                                      () => _useOtp = v!)),
+                                          if (_useOtp)
+                                            TextFormField(
+                                                controller: _otp,
+                                                enabled: !_busy,
+                                                keyboardType:
+                                                    TextInputType.number,
+                                                maxLength: 6,
+                                                inputFormatters: [
+                                                  FilteringTextInputFormatter
+                                                      .digitsOnly
+                                                ],
+                                                decoration: const InputDecoration(
+                                                    labelText:
+                                                        'Código de 6 dígitos',
+                                                    helperText:
+                                                        'Abre tu aplicación autenticadora.'),
+                                                validator: (v) => _useOtp &&
+                                                        (v?.length ?? 0) != 6
                                                     ? 'Completa los 6 dígitos.'
                                                     : null,
-                                            onFieldSubmitted: (_) => _submit()),
-                                    ],
-                                    if (_error != null) ...[
-                                      const SizedBox(height: 12),
-                                      Semantics(
-                                          liveRegion: true,
-                                          child: Text(_error!,
-                                              style: TextStyle(
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .error)))
-                                    ],
-                                    const SizedBox(height: 20),
-                                    FilledButton(
-                                        onPressed: _busy ? null : _submit,
-                                        child: _busy
-                                            ? const SizedBox(
-                                                width: 20,
-                                                height: 20,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                        strokeWidth: 2))
-                                            : Text(_registering
-                                                ? 'Crear cuenta'
-                                                : 'Iniciar sesión')),
-                                    const SizedBox(height: 12),
-                                    TextButton(
-                                        onPressed: _busy
-                                            ? null
-                                            : () {
-                                                setState(() {
-                                                  _registering = !_registering;
-                                                  _error = null;
-                                                  _useOtp = false;
-                                                });
-                                                _form.currentState?.reset();
-                                              },
-                                        child: Text(_registering
-                                            ? 'Ya tengo una cuenta · Iniciar sesión'
-                                            : '¿Primera vez? Crear cuenta')),
-                                  ]))),
+                                                onFieldSubmitted: (_) =>
+                                                    _submit()),
+                                        ],
+                                        if (_error != null) ...[
+                                          const SizedBox(height: 12),
+                                          Semantics(
+                                              liveRegion: true,
+                                              child: Text(_error!,
+                                                  style: TextStyle(
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .error)))
+                                        ],
+                                        const SizedBox(height: 20),
+                                        FilledButton(
+                                            onPressed: _busy ? null : _submit,
+                                            child: _busy
+                                                ? const SizedBox(
+                                                    width: 20,
+                                                    height: 20,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                            strokeWidth: 2))
+                                                : Text(_registering
+                                                    ? 'Crear cuenta'
+                                                    : 'Iniciar sesión')),
+                                        const SizedBox(height: 12),
+                                        TextButton(
+                                            onPressed: _busy
+                                                ? null
+                                                : () {
+                                                    setState(() {
+                                                      _registering =
+                                                          !_registering;
+                                                      _error = null;
+                                                      _useOtp = false;
+                                                    });
+                                                    _form.currentState?.reset();
+                                                  },
+                                            child: Text(_registering
+                                                ? 'Ya tengo una cuenta · Iniciar sesión'
+                                                : '¿Primera vez? Crear cuenta')),
+                                      ])))),
                       const SizedBox(height: 24),
                       const Text(
                           'Simulación académica · Datos guardados en este equipo',

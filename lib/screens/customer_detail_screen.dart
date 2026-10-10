@@ -1,3 +1,6 @@
+import '../utils/app_theme.dart';
+import '../widgets/app_ui.dart';
+import '../widgets/credit_account_tile.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -13,6 +16,7 @@ import '../utils/phone_helper.dart';
 import '../utils/sensitive_action_guard.dart';
 import '../utils/shared_styles.dart';
 import 'customer_receipts_screen.dart';
+import 'add_loan_screen.dart';
 
 class CustomerDetailScreen extends StatelessWidget {
   final Customer customer;
@@ -23,11 +27,11 @@ class CustomerDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final currencyFormat =
         NumberFormat.currency(symbol: '\$', decimalDigits: 2);
-    final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FD),
-      body: Column(
+      backgroundColor: AppTheme.background,
+      body: PageFrame(
+          child: Column(
         children: [
           // Header Background and Content
           Container(
@@ -38,48 +42,30 @@ class CustomerDetailScreen extends StatelessWidget {
               right: 16,
             ),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  theme.colorScheme.primary,
-                  theme.colorScheme.secondary
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+              color: AppTheme.background,
               borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(30),
-                bottomRight: Radius.circular(30),
+                bottomLeft: Radius.circular(0),
+                bottomRight: Radius.circular(0),
               ),
             ),
             child: Row(
               children: [
                 IconButton(
                   icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                      color: Colors.white),
+                      color: AppTheme.ink),
                   onPressed: () => Navigator.pop(context),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
                 const SizedBox(width: 8),
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withAlpha(51),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withAlpha(102)),
-                  ),
-                  child: Center(
-                    child: Text(
-                      customer.name[0].toUpperCase(),
-                      style: AppFonts.inter(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
+                Hero(
+                    tag: 'customer-${customer.id}',
+                    child: CircleAvatar(
+                        backgroundColor: AppTheme.lavender,
+                        foregroundColor: AppTheme.primary,
+                        child: Text(customer.name.isEmpty
+                            ? '?'
+                            : customer.name[0].toUpperCase()))),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -89,7 +75,7 @@ class CustomerDetailScreen extends StatelessWidget {
                       Text(
                         customer.name,
                         style: AppFonts.inter(
-                          color: Colors.white,
+                          color: AppTheme.ink,
                           fontSize: 17,
                           fontWeight: FontWeight.bold,
                         ),
@@ -102,7 +88,7 @@ class CustomerDetailScreen extends StatelessWidget {
                             ? 'ID: ${customer.cedula}'
                             : 'Sin identificación',
                         style: AppFonts.inter(
-                          color: Colors.white.withAlpha(204),
+                          color: AppTheme.ink.withAlpha(204),
                           fontSize: 12,
                         ),
                         maxLines: 1,
@@ -113,7 +99,7 @@ class CustomerDetailScreen extends StatelessWidget {
                 ),
                 IconButton(
                   icon: const Icon(Icons.receipt_long_rounded,
-                      color: Colors.white, size: 22),
+                      color: AppTheme.ink, size: 22),
                   onPressed: () => Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -128,12 +114,18 @@ class CustomerDetailScreen extends StatelessWidget {
                 const SizedBox(width: 4),
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert_rounded,
-                      color: Colors.white, size: 22),
-                  color: Colors.white,
+                      color: AppTheme.ink, size: 22),
+                  color: AppTheme.ink,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16)),
                   onSelected: (value) {
-                    if (value == 'edit') {
+                    if (value == 'new_loan') {
+                      Navigator.push(
+                          context,
+                          MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  AddLoanScreen(initialCustomer: customer)));
+                    } else if (value == 'edit') {
                       _showEditCustomerDialog(context);
                     } else if (value == 'delete') {
                       requireSensitiveActionUnlock(
@@ -145,6 +137,8 @@ class CustomerDetailScreen extends StatelessWidget {
                     }
                   },
                   itemBuilder: (context) => [
+                    const PopupMenuItem(
+                        value: 'new_loan', child: Text('Nuevo préstamo')),
                     PopupMenuItem(
                       value: 'edit',
                       child: Row(
@@ -180,10 +174,28 @@ class CustomerDetailScreen extends StatelessWidget {
               slivers: [
                 const SliverToBoxAdapter(child: SizedBox(height: 20)),
                 Consumer<DebtProvider>(
+                    builder: (context, provider, _) => SliverPadding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        sliver: SliverList.list(children: [
+                          for (final account in provider.activeCreditAccounts
+                              .where((a) =>
+                                  a['customerId'] == customer.id.toString()))
+                            Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: CreditAccountTile(
+                                    account: account,
+                                    customerName: customer.name))
+                        ]))),
+                Consumer<DebtProvider>(
                   builder: (context, provider, child) {
                     final loans = provider.getLoansByCustomer(customer.id!);
 
                     if (loans.isEmpty) {
+                      if (provider.activeCreditAccounts.any(
+                          (a) => a['customerId'] == customer.id.toString())) {
+                        return const SliverToBoxAdapter(
+                            child: SizedBox(height: 24));
+                      }
                       final t = Theme.of(context);
                       return SliverFillRemaining(
                         child: Center(
@@ -214,7 +226,7 @@ class CustomerDetailScreen extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
-                                  'Registrá el primer préstamo de ${customer.name} desde el botón "+" del inicio.',
+                                  'Registrá el primer préstamo de ${customer.name} desde Nuevo préstamo en el inicio.',
                                   textAlign: TextAlign.center,
                                   style: AppFonts.inter(
                                       fontSize: 12, color: Colors.grey),
@@ -247,7 +259,7 @@ class CustomerDetailScreen extends StatelessWidget {
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 
@@ -269,7 +281,7 @@ class CustomerDetailScreen extends StatelessWidget {
         content: dialogContent([
           Text(
             'Esta acción eliminará permanentemente a ${customer.name} y todo su historial de préstamos y cobros. Esta acción no se puede deshacer.',
-            style: AppFonts.inter(fontSize: 13, color: Colors.grey[500]),
+            style: AppFonts.inter(fontSize: 13, color: AppTheme.muted),
           ),
         ]),
         actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
@@ -335,7 +347,7 @@ class CustomerDetailScreen extends StatelessWidget {
             style: AppFonts.inter(fontWeight: FontWeight.w700, fontSize: 17)),
         content: dialogContent([
           Text('Actualiza los datos de ${customer.name}.',
-              style: AppFonts.inter(fontSize: 13, color: Colors.grey[500])),
+              style: AppFonts.inter(fontSize: 13, color: AppTheme.muted)),
           const SizedBox(height: 20),
           TextField(
             controller: nameController,
@@ -464,13 +476,7 @@ class _LoanCardState extends State<_LoanCard> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(32),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(10),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
+        boxShadow: const [],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -500,7 +506,7 @@ class _LoanCardState extends State<_LoanCard> {
                         _rateLabel(),
                         style: AppFonts.inter(
                           fontSize: 12,
-                          color: Colors.grey[500],
+                          color: AppTheme.muted,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -547,7 +553,7 @@ class _LoanCardState extends State<_LoanCard> {
               ),
               PopupMenuButton<String>(
                 icon: Icon(Icons.more_vert_rounded,
-                    color: Colors.grey[400], size: 20),
+                    color: AppTheme.muted, size: 20),
                 padding: EdgeInsets.zero,
                 onSelected: (value) {
                   if (value == 'delete') {
@@ -567,7 +573,7 @@ class _LoanCardState extends State<_LoanCard> {
                         content: Text(newValue
                             ? 'Este préstamo acumulará el interés vencido (Opción B).'
                             : 'Este préstamo NO acumulará interés vencido (Opción A).'),
-                        backgroundColor: const Color(0xFF7C3AED),
+                        backgroundColor: const Color(0xFF7935C8),
                       ),
                     );
                   }
@@ -583,7 +589,7 @@ class _LoanCardState extends State<_LoanCard> {
                                 ? Icons.layers_clear_rounded
                                 : Icons.layers_rounded,
                             size: 18,
-                            color: const Color(0xFF7C3AED),
+                            color: const Color(0xFF7935C8),
                           ),
                           const SizedBox(width: 10),
                           Text(widget.loan.accumulateOverdueInterest
@@ -608,34 +614,37 @@ class _LoanCardState extends State<_LoanCard> {
             ],
           ),
           const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _DetailItem(
-                  label: 'Monto Inicial',
-                  value:
-                      widget.currencyFormat.format(widget.loan.initialAmount)),
-              _DetailItem(
-                  label: 'Abonado',
-                  value: widget.currencyFormat.format(state.totalPaid)),
-            ],
-          ),
-          if (hasInterest) ...[
-            const SizedBox(height: 20),
+          ExpansionTile(title: const Text('Desglose del préstamo'), children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 _DetailItem(
-                    label: 'Capital pendiente',
-                    value:
-                        widget.currencyFormat.format(state.outstandingCapital)),
+                    label: 'Monto Inicial',
+                    value: widget.currencyFormat
+                        .format(widget.loan.initialAmount)),
                 _DetailItem(
-                    label: 'Interés pendiente',
-                    value: widget.currencyFormat.format(state.pendingInterest)),
+                    label: 'Abonado',
+                    value: widget.currencyFormat.format(state.totalPaid)),
               ],
             ),
-          ],
-          const SizedBox(height: 24),
+            if (hasInterest) ...[
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _DetailItem(
+                      label: 'Capital pendiente',
+                      value: widget.currencyFormat
+                          .format(state.outstandingCapital)),
+                  _DetailItem(
+                      label: 'Interés pendiente',
+                      value:
+                          widget.currencyFormat.format(state.pendingInterest)),
+                ],
+              ),
+            ],
+            const SizedBox(height: 24),
+          ]),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -643,8 +652,10 @@ class _LoanCardState extends State<_LoanCard> {
               color: theme.colorScheme.primary.withAlpha(13),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              spacing: 16,
+              runSpacing: 12,
               children: [
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -655,7 +666,7 @@ class _LoanCardState extends State<_LoanCard> {
                     if (!isFullyPaid && hasInterest)
                       Text('Capital + interés sobre saldo',
                           style: AppFonts.inter(
-                              fontSize: 10, color: Colors.grey[400])),
+                              fontSize: 10, color: AppTheme.muted)),
                   ],
                 ),
                 Text(
@@ -688,10 +699,10 @@ class _LoanCardState extends State<_LoanCard> {
                 minimumSize: const Size(double.infinity, 56),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16)),
-                elevation: 4,
+                elevation: 0,
                 shadowColor: theme.colorScheme.primary.withAlpha(77),
               ),
-              child: const Text('COBRAR PAGO',
+              child: const Text('Registrar cobro',
                   style: TextStyle(
                       fontWeight: FontWeight.bold, letterSpacing: 1.1)),
             )
@@ -699,7 +710,7 @@ class _LoanCardState extends State<_LoanCard> {
             ElevatedButton.icon(
               onPressed: null,
               icon: const Icon(Icons.check_circle_rounded, size: 20),
-              label: const Text('DEUDA CANCELADA',
+              label: const Text('Préstamo saldado',
                   style: TextStyle(
                       fontWeight: FontWeight.bold, letterSpacing: 1.1)),
               style: ElevatedButton.styleFrom(
@@ -738,7 +749,7 @@ class _LoanCardState extends State<_LoanCard> {
         content: dialogContent([
           Text(
             'Se eliminará "${widget.loan.title}" junto con todos sus cobros registrados. Esta acción no se puede deshacer.',
-            style: AppFonts.inter(fontSize: 13, color: Colors.grey[500]),
+            style: AppFonts.inter(fontSize: 13, color: AppTheme.muted),
           ),
         ]),
         actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
@@ -792,7 +803,7 @@ class _LoanCardState extends State<_LoanCard> {
             style: AppFonts.inter(fontWeight: FontWeight.w700, fontSize: 17)),
         content: dialogContent([
           Text('Registra el cobro recibido de ${customer.name}:',
-              style: AppFonts.inter(fontSize: 13, color: Colors.grey[500])),
+              style: AppFonts.inter(fontSize: 13, color: AppTheme.muted)),
           const SizedBox(height: 20),
           TextField(
             controller: controller,
@@ -991,7 +1002,7 @@ class _PaymentHistorySectionState extends State<_PaymentHistorySection> {
         content: dialogContent([
           Text(
             'Se eliminará el cobro de ${widget.currencyFormat.format(payment.amount)} y se restará del saldo abonado de este préstamo.',
-            style: AppFonts.inter(fontSize: 13, color: Colors.grey[500]),
+            style: AppFonts.inter(fontSize: 13, color: AppTheme.muted),
           ),
         ]),
         actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
@@ -1066,7 +1077,7 @@ class _PaymentHistorySectionState extends State<_PaymentHistorySection> {
                         _expanded
                             ? Icons.keyboard_arrow_up_rounded
                             : Icons.keyboard_arrow_down_rounded,
-                        color: Colors.grey[500],
+                        color: AppTheme.muted,
                       ),
                     ],
                   ),
@@ -1100,7 +1111,7 @@ class _PaymentHistorySectionState extends State<_PaymentHistorySection> {
                                       'Interés ${widget.currencyFormat.format(b.toInterest)} · Capital ${widget.currencyFormat.format(b.toCapital)}',
                                       style: AppFonts.inter(
                                           fontSize: 10.5,
-                                          color: Colors.grey[400]),
+                                          color: AppTheme.muted),
                                     ),
                                 ],
                               ),
@@ -1166,7 +1177,7 @@ class _PaymentHistorySectionState extends State<_PaymentHistorySection> {
                         _interestExpanded
                             ? Icons.keyboard_arrow_up_rounded
                             : Icons.keyboard_arrow_down_rounded,
-                        color: Colors.grey[500],
+                        color: AppTheme.muted,
                       ),
                     ],
                   ),
@@ -1201,8 +1212,7 @@ class _PaymentHistorySectionState extends State<_PaymentHistorySection> {
                                   Text(
                                     '$rateLabel sobre ${widget.currencyFormat.format(a.capitalBase)} de capital',
                                     style: AppFonts.inter(
-                                        fontSize: 10.5,
-                                        color: Colors.grey[400]),
+                                        fontSize: 10.5, color: AppTheme.muted),
                                   ),
                                 ],
                               ),

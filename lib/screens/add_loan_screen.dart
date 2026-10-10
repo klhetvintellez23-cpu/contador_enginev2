@@ -8,9 +8,14 @@ import '../models/transaction.dart';
 import '../models/customer.dart';
 import '../widgets/quick_loan_calculator_sheet.dart';
 import '../utils/shared_styles.dart';
+import '../utils/app_theme.dart';
+import '../widgets/app_ui.dart';
+import '../widgets/app_search_field.dart';
+import 'installment_simulator_screen.dart';
 
 class AddLoanScreen extends StatefulWidget {
-  const AddLoanScreen({super.key});
+  final Customer? initialCustomer;
+  const AddLoanScreen({super.key, this.initialCustomer});
 
   @override
   State<AddLoanScreen> createState() => _AddLoanScreenState();
@@ -33,6 +38,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedCustomer = widget.initialCustomer;
     // Refresca el ejemplo en vivo mientras el usuario escribe.
     _amountController.addListener(_refresh);
     _incrementController.addListener(_refresh);
@@ -136,345 +142,209 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // listen:false a propósito: esta pantalla es un formulario de un solo uso.
-    // Si escuchara al provider, una actualización en tiempo real de la base local
-    // (p. ej. otro dispositivo editando clientes) reconstruiría el Dropdown
-    // con una lista nueva de clientes y podía perder la selección del usuario
-    // a mitad de llenado, causando un fallo al crear el préstamo.
-    final provider = Provider.of<DebtProvider>(context, listen: false);
-    final theme = Theme.of(context);
-
+    final provider = context.read<DebtProvider>();
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FD),
-      body: Column(
-        children: [
-          Container(
-            padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top + 12,
-              bottom: 20,
-              left: 8,
-              right: 8,
-            ),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  theme.colorScheme.primary,
-                  theme.colorScheme.secondary,
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(30),
-                bottomRight: Radius.circular(30),
-              ),
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                      color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                Expanded(
-                  child: Text(
-                    'Nuevo Préstamo',
-                    style: AppFonts.inter(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon:
-                      const Icon(Icons.calculate_rounded, color: Colors.white),
-                  tooltip: 'Calculadora rápida',
-                  onPressed: _openQuickCalculator,
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: Form(
-              key: _formKey,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-                children: [
-                  Text(
-                    'Configuración de nuevo préstamo',
-                    style: AppFonts.inter(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF1E293B),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Ingrese los detalles de la operación financiera.',
-                    style:
-                        AppFonts.inter(fontSize: 12.5, color: Colors.grey[500]),
-                  ),
-                  const SizedBox(height: 24),
-                  _SectionCard(
-                    title: 'Selección de Cliente',
-                    child: PillSelector(
-                      icon: Icons.person_rounded,
-                      label: _selectedCustomer?.name ?? 'Seleccionar Cliente',
-                      isPlaceholder: _selectedCustomer == null,
-                      onTap: () =>
-                          _showCustomerPicker(context, provider.customers),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  _SectionCard(
-                    title: 'Detalles del Préstamo',
-                    child: Column(
+      body: PageFrame(
+          maxWidth: 720,
+          child: Column(children: [
+            const PageHeading(
+                title: 'Nuevo préstamo',
+                subtitle: 'Define el monto y cómo se cobrará.',
+                back: true),
+            Expanded(
+                child: Form(
+                    key: _formKey,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
                       children: [
-                        TextFormField(
-                          controller: _titleController,
-                          decoration: flatFieldDecoration(
-                            label: 'Concepto',
-                            icon: Icons.edit_note_rounded,
-                          ),
-                          validator: (val) =>
-                              val!.isEmpty ? 'Ingresa un concepto' : null,
-                        ),
-                        const SizedBox(height: 14),
-                        TextFormField(
-                          controller: _amountController,
-                          decoration: flatFieldDecoration(
-                            label: 'Monto Inicial (USD)',
-                            icon: Icons.attach_money_rounded,
-                          ),
-                          keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true),
-                          validator: (val) =>
-                              val!.isEmpty ? 'El monto es obligatorio' : null,
-                        ),
+                        Wrap(spacing: 8, runSpacing: 4, children: [
+                          TextButton.icon(
+                              onPressed: _openQuickCalculator,
+                              icon: const Icon(Icons.calculate_outlined,
+                                  size: 18),
+                              label: const Text('Calculadora rápida')),
+                          TextButton.icon(
+                              onPressed: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute<void>(
+                                      builder: (_) =>
+                                          InstallmentSimulatorScreen(
+                                              initialAmount: double.tryParse(
+                                                  _amountController.text
+                                                      .trim()
+                                                      .replaceAll(',', '.'))))),
+                              icon: const Icon(Icons.view_timeline_outlined,
+                                  size: 18),
+                              label: const Text('Simular cuotas')),
+                        ]),
+                        const SizedBox(height: 16),
+                        const Text('Cliente',
+                            style: TextStyle(fontWeight: FontWeight.w600)),
                         const SizedBox(height: 8),
-                        _buildBudgetHint(provider.moneyInHand),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  _SectionCard(
-                    title: 'Tipo de Préstamo',
-                    child: SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        _hasInterest ? 'Con Intereses' : 'Sin Intereses',
-                        style: AppFonts.inter(
-                          fontWeight: FontWeight.w600,
-                          color: _hasInterest
-                              ? const Color(0xFF7C3AED)
-                              : Colors.grey,
-                        ),
-                      ),
-                      subtitle: Text(
-                        _hasInterest
-                            ? 'El préstamo generará cargos según la frecuencia que elijas.'
-                            : 'El préstamo es a capital puro, sin intereses.',
-                        style: AppFonts.inter(fontSize: 12),
-                      ),
-                      value: _hasInterest,
-                      activeThumbColor: const Color(0xFF7C3AED),
-                      onChanged: (val) => setState(() => _hasInterest = val),
-                    ),
-                  ),
-                  if (_hasInterest) ...[
-                    const SizedBox(height: 24),
-                    _SectionCard(
-                      title: 'Configuración de Intereses',
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('¿Cómo se calcula?',
-                              style: AppFonts.inter(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.grey[600])),
-                          const SizedBox(height: 10),
-                          SizedBox(
-                            width: double.infinity,
-                            child: SegmentedButton<IncrementType>(
-                              showSelectedIcon: false,
-                              style: SegmentedButton.styleFrom(
-                                selectedBackgroundColor:
-                                    const Color(0xFF7C3AED),
-                                selectedForegroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16)),
-                              ),
-                              segments: const [
-                                ButtonSegment(
-                                    value: IncrementType.percentage,
-                                    label: Text('% Porcentaje')),
-                                ButtonSegment(
-                                    value: IncrementType.fixed,
-                                    label: Text('\$ Monto fijo')),
-                              ],
-                              selected: {_incrementType},
-                              onSelectionChanged: (newSelection) {
-                                setState(
-                                    () => _incrementType = newSelection.first);
-                              },
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          Text('¿Cada cuánto se cobra?',
-                              style: AppFonts.inter(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.grey[600])),
-                          const SizedBox(height: 10),
-                          SizedBox(
-                            width: double.infinity,
-                            child: SegmentedButton<IncrementPeriod>(
-                              showSelectedIcon: false,
-                              style: SegmentedButton.styleFrom(
-                                selectedBackgroundColor:
-                                    const Color(0xFF7C3AED),
-                                selectedForegroundColor: Colors.white,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 4),
-                                textStyle: AppFonts.inter(fontSize: 12),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16)),
-                              ),
-                              segments: const [
-                                ButtonSegment(
-                                    value: IncrementPeriod.daily,
-                                    label: Text('Día')),
-                                ButtonSegment(
-                                    value: IncrementPeriod.weekly,
-                                    label: Text('Semana')),
-                                ButtonSegment(
-                                    value: IncrementPeriod.biweekly,
-                                    label: Text('Quincena')),
-                                ButtonSegment(
-                                    value: IncrementPeriod.monthly,
-                                    label: Text('Mes')),
-                              ],
-                              selected: {_incrementPeriod},
-                              onSelectionChanged: (newSelection) {
-                                setState(() =>
-                                    _incrementPeriod = newSelection.first);
-                              },
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          TextFormField(
-                            controller: _incrementController,
-                            decoration: flatFieldDecoration(
-                              label: _incrementType == IncrementType.percentage
-                                  ? 'Porcentaje por ${_incrementPeriod.label.toLowerCase()}'
-                                  : 'Dólares por ${_incrementPeriod.label.toLowerCase()}',
-                              icon: _incrementType == IncrementType.percentage
-                                  ? Icons.auto_graph_rounded
-                                  : Icons.add_circle_outline_rounded,
-                            ),
+                        PillSelector(
+                            icon: Icons.person_outline_rounded,
+                            label: _selectedCustomer?.name ??
+                                'Seleccionar cliente',
+                            isPlaceholder: _selectedCustomer == null,
+                            onTap: () => _showCustomerPicker(
+                                context, provider.customers)),
+                        const SizedBox(height: 24),
+                        TextFormField(
+                            controller: _amountController,
+                            decoration: const InputDecoration(
+                                labelText: 'Monto a prestar',
+                                prefixText: '\$ '),
                             keyboardType: const TextInputType.numberWithOptions(
                                 decimal: true),
-                            validator: (val) =>
-                                val!.isEmpty ? 'Valor requerido' : null,
-                          ),
-                          const SizedBox(height: 16),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF7C3AED).withAlpha(13),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Icon(Icons.auto_awesome_rounded,
-                                    color: Color(0xFF7C3AED), size: 18),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    _buildPreviewText(),
-                                    style: AppFonts.inter(
-                                      fontSize: 12,
-                                      color: const Color(0xFF1E293B),
-                                      height: 1.4,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          SwitchListTile(
+                            validator: (v) => v == null || v.trim().isEmpty
+                                ? 'Ingresa el monto.'
+                                : null),
+                        const SizedBox(height: 8),
+                        _buildBudgetHint(provider.moneyInHand),
+                        const SizedBox(height: 20),
+                        TextFormField(
+                            controller: _titleController,
+                            decoration: const InputDecoration(
+                                labelText: 'Concepto',
+                                hintText: 'Ej. Capital de trabajo'),
+                            textCapitalization: TextCapitalization.sentences,
+                            validator: (v) => v == null || v.trim().isEmpty
+                                ? 'Ingresa un concepto.'
+                                : null),
+                        const SizedBox(height: 20),
+                        SwitchListTile.adaptive(
                             contentPadding: EdgeInsets.zero,
-                            activeThumbColor: Colors.white,
-                            activeTrackColor: const Color(0xFF7C3AED),
-                            value: _accumulateOverdueInterest,
-                            onChanged: (val) => setState(
-                                () => _accumulateOverdueInterest = val),
-                            title: Text('Acumular interés vencido',
-                                style: AppFonts.inter(
-                                    fontWeight: FontWeight.w600, fontSize: 14)),
-                            subtitle: Text(
-                              _accumulateOverdueInterest
-                                  ? 'En cada vencimiento se genera un nuevo interés aunque el anterior siga pendiente. La base siempre es el capital pendiente.'
-                                  : 'No se genera interés nuevo mientras haya interés vencido sin pagar.',
-                              style: AppFonts.inter(
-                                  fontSize: 12, color: Colors.grey[600]),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                ],
-              ),
-            ),
-          ),
-          Container(
-            width: double.infinity,
-            padding: EdgeInsets.fromLTRB(
-                20, 14, 20, MediaQuery.of(context).padding.bottom + 14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8F9FD),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withAlpha(13),
-                  blurRadius: 20,
-                  offset: const Offset(0, -6),
-                ),
-              ],
-            ),
-            child: SizedBox(
-              width: double.infinity,
-              height: 58,
-              child: ElevatedButton(
-                onPressed: _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF7C3AED),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18)),
-                  elevation: 6,
-                  shadowColor: const Color(0xFF7C3AED).withAlpha(102),
-                ),
-                child: Text(
-                  'CREAR PRÉSTAMO',
-                  style: AppFonts.inter(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+                            title: const Text('Cobrar intereses',
+                                style: TextStyle(fontWeight: FontWeight.w600)),
+                            value: _hasInterest,
+                            onChanged: (value) =>
+                                setState(() => _hasInterest = value)),
+                        AnimatedSize(
+                            duration: AppMotion.duration(context),
+                            curve: Curves.easeOutCubic,
+                            alignment: Alignment.topCenter,
+                            child: !_hasInterest
+                                ? const SizedBox(width: double.infinity)
+                                : Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                        const SizedBox(height: 12),
+                                        DropdownButtonFormField<
+                                                IncrementPeriod>(
+                                            initialValue: _incrementPeriod,
+                                            key: ValueKey(_incrementPeriod),
+                                            decoration: const InputDecoration(
+                                                labelText:
+                                                    'Frecuencia de cobro'),
+                                            items: [
+                                              for (final period
+                                                  in IncrementPeriod.values)
+                                                DropdownMenuItem(
+                                                    value: period,
+                                                    child: Text(period.label))
+                                            ],
+                                            onChanged: (value) {
+                                              if (value != null) {
+                                                setState(() =>
+                                                    _incrementPeriod = value);
+                                              }
+                                            }),
+                                        const SizedBox(height: 16),
+                                        TextFormField(
+                                            controller: _incrementController,
+                                            decoration: InputDecoration(
+                                                labelText: _incrementType ==
+                                                        IncrementType.percentage
+                                                    ? 'Interés por período'
+                                                    : 'Interés fijo por período',
+                                                suffixText: _incrementType ==
+                                                        IncrementType.percentage
+                                                    ? '%'
+                                                    : 'USD'),
+                                            keyboardType: const TextInputType
+                                                .numberWithOptions(
+                                                decimal: true),
+                                            validator: (v) =>
+                                                v == null || v.trim().isEmpty
+                                                    ? 'Ingresa el interés.'
+                                                    : null),
+                                        const SizedBox(height: 12),
+                                        Text(_buildPreviewText(),
+                                            style: const TextStyle(
+                                                fontSize: 13,
+                                                color: AppTheme.muted,
+                                                height: 1.5)),
+                                        const SizedBox(height: 16),
+                                        SettingsGroup(
+                                            title: 'Opciones avanzadas',
+                                            subtitle:
+                                                '${_incrementType == IncrementType.percentage ? 'Porcentaje' : 'Monto fijo'} · ${_accumulateOverdueInterest ? 'Acumula interés vencido' : 'Sin acumulación'}',
+                                            children: [
+                                              DropdownButtonFormField<
+                                                      IncrementType>(
+                                                  initialValue: _incrementType,
+                                                  key: ValueKey(_incrementType),
+                                                  decoration: const InputDecoration(
+                                                      labelText:
+                                                          'Forma de calcular el interés'),
+                                                  items: const [
+                                                    DropdownMenuItem(
+                                                        value: IncrementType
+                                                            .percentage,
+                                                        child:
+                                                            Text('Porcentaje')),
+                                                    DropdownMenuItem(
+                                                        value:
+                                                            IncrementType.fixed,
+                                                        child:
+                                                            Text('Monto fijo'))
+                                                  ],
+                                                  onChanged: (value) {
+                                                    if (value != null) {
+                                                      setState(() =>
+                                                          _incrementType =
+                                                              value);
+                                                    }
+                                                  }),
+                                              const SizedBox(height: 12),
+                                              SwitchListTile.adaptive(
+                                                  contentPadding:
+                                                      EdgeInsets.zero,
+                                                  value:
+                                                      _accumulateOverdueInterest,
+                                                  onChanged: (value) =>
+                                                      setState(() =>
+                                                          _accumulateOverdueInterest =
+                                                              value),
+                                                  title: const Text(
+                                                      'Acumular interés vencido'),
+                                                  subtitle: Text(
+                                                      _accumulateOverdueInterest
+                                                          ? 'Genera interés en cada vencimiento sobre el capital pendiente.'
+                                                          : 'Espera a liquidar el interés pendiente antes de generar otro.')),
+                                            ]),
+                                      ])),
+                      ],
+                    ))),
+            SafeArea(
+                top: false,
+                child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
+                    child: SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                            onPressed: _saving ? null : _submit,
+                            child: AnimatedSwitcher(
+                                duration: AppMotion.duration(context, 180),
+                                child: _saving
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2))
+                                    : const Text('Crear préstamo')))))),
+          ])),
     );
   }
 
@@ -529,7 +399,7 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
           content: dialogContent([
             Text(
               'No puedes crear este préstamo: el monto (${currency.format(initialAmount)}) supera tu presupuesto disponible (${currency.format(availableBudget)}).\n\nAgrega más capital desde Configuración antes de continuar.',
-              style: AppFonts.inter(fontSize: 13, color: Colors.grey[500]),
+              style: AppFonts.inter(fontSize: 13, color: AppTheme.muted),
             ),
           ]),
           actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
@@ -575,44 +445,6 @@ class _AddLoanScreenState extends State<AddLoanScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
-  }
-}
-
-class _SectionCard extends StatelessWidget {
-  final String title;
-  final Widget child;
-
-  const _SectionCard({required this.title, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 12),
-          child: Text(
-            title.toUpperCase(),
-            style: sectionCaptionStyle(),
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(32),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withAlpha(5),
-                blurRadius: 15,
-                offset: const Offset(0, 5),
-              ),
-            ],
-          ),
-          child: child,
-        ),
-      ],
-    );
   }
 }
 
@@ -668,14 +500,11 @@ class _CustomerPickerSheetState extends State<_CustomerPickerSheet> {
                   style: AppFonts.inter(
                       fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 16),
-              TextField(
+              AppSearchField(
                 controller: _searchController,
                 onChanged: (val) =>
                     setState(() => _query = val.trim().toLowerCase()),
-                decoration: flatFieldDecoration(
-                  label: 'Buscar cliente',
-                  icon: Icons.search_rounded,
-                ),
+                hint: 'Buscar cliente',
               ),
               const SizedBox(height: 12),
               Expanded(

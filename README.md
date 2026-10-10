@@ -1,9 +1,24 @@
 ﻿# ContadorEngine · Gestión crediticia local
 
-Aplicación Flutter para simular solicitudes de crédito, evaluación financiera,
-aprobación por roles, amortización, pagos y auditoría conforme a la presentación académica.
+Aplicación Flutter para administrar clientes, préstamos, cobros, capital y reportes.
+Administración utiliza Inicio, Solicitudes, Cartera y Perfil. Cartera conserva
+las funciones originales de clientes, préstamos directos, cobros e informes.
+Los ajustes del negocio se encuentran en Perfil. El solicitante utiliza Inicio,
+Mis solicitudes y Perfil, con un formulario por pasos.
+
+Desde **Nuevo préstamo → Simular cuotas** se pueden comparar los métodos Francés
+y Alemán con monto, tasa nominal anual y plazo mensual. Esta primera integración
+muestra el desglose de cuotas sin registrar préstamos ni modificar la cartera.
+
+El código del proceso académico por roles y sus datos se conservan. Las cuentas
+de solicitante, analista y cumplimiento mantienen su acceso específico.
 
 ## Ejecutar
+
+La navegación y las pantallas usan el nuevo diseño adaptable en morado y fondos
+claros. Consulta la [auditoría, cambios de interfaz y validación](docs/rediseno-ui.md).
+La [integración local y navegación por roles](docs/integracion-local-creditos.md)
+describe el flujo aprobado, los respaldos y el alcance real de la sincronización.
 
 ```sh
 flutter pub get
@@ -48,9 +63,14 @@ una aplicación autenticadora. Guarda el secreto TOTP de recuperación fuera de 
 3. Cierra sesión y entra como analista. Abre el expediente, calcula DTI/scoring y
    aprueba la etapa con un motivo.
 4. Entra como cumplimiento y registra la revisión con su motivo.
-5. Entra como gerencia y aprueba. Solo entonces se genera el plan Francés o Alemán.
-6. Registra un pago con referencia única, revisa el saldo y exporta PDF/JSON.
-7. Consulta la bitácora. Si un pago es incorrecto, anúlalo con motivo; permanece visible.
+5. Entra como gerencia y confirma la aprobación. La solicitud queda pendiente
+   de formalización; todavía no mueve caja ni permite cobrar.
+6. Registra al cliente en Cartera si no existe. Desde el expediente, formaliza
+   el crédito vinculando al cliente verificado y la referencia del acuerdo.
+7. Registra la entrega real, fecha y referencia. Se verifica el capital disponible,
+   se activa un solo crédito y se genera el plan desde esa fecha.
+8. Registra un pago con referencia única, revisa el saldo y exporta PDF/JSON.
+9. Consulta la bitácora. Si un pago es incorrecto, anúlalo con motivo; permanece visible.
 
 Los roles no pueden saltar etapas. Una devolución permite al solicitante corregir
 el borrador e invalida la evaluación anterior. El saldo cero se muestra como préstamo saldado.
@@ -78,16 +98,23 @@ el borrador e invalida la evaluación anterior. El saldo cero se muestra como pr
 
 Las escrituras del negocio y su bitácora se guardan juntas en una entrada Hive y
 se serializan para evitar cambios parciales. La migración conserva la cartera anterior.
-Esta cartera queda disponible para gerencia y no permite crear nuevos préstamos
-sin el nuevo proceso. Sus reportes y respaldos históricos siguen separados.
+La cartera permite crear préstamos directamente. Ambos motores se conservan,
+con una lectura común de caja, cierre diario, gráficos y reportes. Los créditos
+aprobados anteriormente conservan su plan y pagos y requieren conciliación explícita
+antes de entrar en los totales comunes. No se crea una copia en la tabla de préstamos directos.
 
-El botón **Respaldar** del módulo Créditos genera un JSON completo v2. Restaurar
+**Perfil → Administración avanzada → Respaldar negocio completo**, o Exportar
+respaldo desde los ajustes del negocio, genera un JSON completo v3. Restaurar
 valida el documento, reemplaza el negocio y conserva evidencia de la operación.
 No exporta contraseñas, sesiones ni secretos 2FA. Requiere que las cuentas propietarias
 existan con los mismos identificadores: sirve para recuperar la misma instalación
 (o una instalación con las cuentas de demostración correspondientes). No es una
 migración automática de usuarios personalizados entre equipos. El respaldo histórico
-v1 se importa desde Cartera anterior.
+v1 se importa desde los ajustes del negocio; también se aceptan respaldos completos v2.
+
+Las solicitudes se comparten entre roles en una misma instalación. Dos dispositivos
+mantienen bases independientes. La sincronización remota requiere un servidor,
+autenticación central y permisos; todavía no está implementada.
 
 En web los documentos se descargan; en plataformas nativas se guardan y pueden
 compartirse. Cerrar sesión conserva preferencias y comprobantes. Olvidar el PIN

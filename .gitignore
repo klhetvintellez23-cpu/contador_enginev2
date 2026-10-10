@@ -54,6 +54,8 @@ android/.kotlin/
 # Local review tools, credentials and runtime data
 /.review/
 /.tools/
+# Local design reference videos
+/*.mov
 .env
 .env.*
 !.env.example

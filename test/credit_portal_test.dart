@@ -32,15 +32,11 @@ void main() {
     });
     await tester.pumpWidget(
         MaterialApp(theme: AppTheme.light, home: const CreditPortalScreen()));
-    await tester.scrollUntilVisible(find.text('Compra de equipo'), 250,
-        scrollable: find
-            .descendant(
-                of: find.byType(CustomScrollView),
-                matching: find.byType(Scrollable))
-            .first);
-    expect(find.text('Compra de equipo'), findsOneWidget);
+    await tester.pumpAndSettle();
     expect(find.text('Auditoría'), findsNothing);
-    await tester.tap(find.text('Compra de equipo'));
+    await tester.tap(find.text('Mis solicitudes').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Compra de equipo').last);
     await tester.pumpAndSettle();
     expect(find.text('Enviar a análisis'), findsOneWidget);
     await tester.ensureVisible(find.text('Enviar a análisis'));
@@ -58,9 +54,18 @@ void main() {
       (tester) async {
     await tester.pumpWidget(
         const MaterialApp(home: Scaffold(body: CreditApplicationForm())));
-    await tester.tap(find.text('Guardar borrador'));
+    final fields = find.byType(TextFormField);
+    await tester.enterText(fields.at(0), '1000');
+    await tester.enterText(fields.at(1), 'Compra de equipo');
+    await tester.scrollUntilVisible(find.text('Continuar'), 200,
+        scrollable: find.byType(Scrollable).first);
+    await tester.tap(find.text('Continuar'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Revisa los campos.'), findsOneWidget);
+    await tester.enterText(find.byType(TextFormField).first, '0');
+    await tester.ensureVisible(find.text('Continuar'));
+    await tester.tap(find.text('Continuar'));
+    await tester.pumpAndSettle();
+    expect(find.text('Debe ser mayor que cero.'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
   testWidgets('Gerencia tiene auditoría y respaldo en pantalla móvil',
@@ -75,10 +80,13 @@ void main() {
     await tester.pumpWidget(
         MaterialApp(theme: AppTheme.light, home: const CreditPortalScreen()));
     expect(find.text('Auditoría'), findsNothing);
-    await tester.tap(find.text('Herramientas'));
+    await tester.tap(find.text('Perfil').last);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Administración avanzada'));
+    await tester.tap(find.text('Administración avanzada'));
     await tester.pumpAndSettle();
     expect(find.text('Auditoría'), findsOneWidget);
-    expect(find.text('Respaldar'), findsOneWidget);
+    expect(find.text('Respaldar negocio completo'), findsOneWidget);
     expect(find.text('Nueva solicitud'), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -115,7 +123,7 @@ void main() {
     });
     await tester.pumpWidget(
         MaterialApp(theme: AppTheme.light, home: const CreditPortalScreen()));
-    await tester.tap(find.text('Mi cuenta'));
+    await tester.tap(find.text('Perfil').last);
     await tester.pumpAndSettle();
     expect(find.text('admin@contador.local'), findsOneWidget);
     await tester.tap(find.text('Cerrar sesión'));

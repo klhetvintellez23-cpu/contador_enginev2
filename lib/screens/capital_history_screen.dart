@@ -1,3 +1,5 @@
+import '../widgets/app_ui.dart';
+import '../utils/app_theme.dart';
 import 'package:flutter/material.dart';
 import '../utils/local_fonts.dart';
 import 'package:intl/intl.dart';
@@ -12,53 +14,15 @@ class CapitalHistoryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final currencyFormat =
         NumberFormat.currency(symbol: '\$', decimalDigits: 2);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FD),
-      body: Column(
+      backgroundColor: AppTheme.background,
+      body: PageFrame(
+          child: Column(
         children: [
-          Container(
-            padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top + 12,
-              bottom: 20,
-              left: 12,
-              right: 28,
-            ),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  theme.colorScheme.primary,
-                  theme.colorScheme.secondary
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(30),
-                bottomRight: Radius.circular(30),
-              ),
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                      color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                Text(
-                  'Historial de Capital',
-                  style: AppFonts.inter(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.5),
-                ),
-              ],
-            ),
-          ),
+          const PageHeading(title: 'Capital', back: true),
           Expanded(
             child: Consumer<DebtProvider>(
               builder: (context, provider, child) {
@@ -146,7 +110,7 @@ class CapitalHistoryScreen extends StatelessWidget {
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 }

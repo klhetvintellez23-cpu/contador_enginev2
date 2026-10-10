@@ -26,12 +26,13 @@ void main() {
       db.signIn('$user@contador.local', 'ContadorLocal2026!');
   test('Una sesión caducada vuelve al acceso y bloquea operaciones', () async {
     await login('cliente');
-    final box=Hive.box('contador_local_database_v1');
-    final session=Map<String,dynamic>.from(box.get('session_v2') as Map);
-    session['expires']=DateTime.now().subtract(const Duration(seconds:1)).toIso8601String();
-    await box.put('session_v2',session);
-    expect(db.currentUser,isNull);
-    expect(()=>db.readWorkflow(),throwsStateError);
+    final box = Hive.box('contador_local_database_v1');
+    final session = Map<String, dynamic>.from(box.get('session_v2') as Map);
+    session['expires'] =
+        DateTime.now().subtract(const Duration(seconds: 1)).toIso8601String();
+    await box.put('session_v2', session);
+    expect(db.currentUser, isNull);
+    expect(() => db.readWorkflow(), throwsStateError);
   });
   test('Ciclo completo, permisos, saldo, anulación y persistencia', () async {
     await login('cliente');
@@ -61,7 +62,12 @@ void main() {
     await login('admin');
     await service.decide(id, 'advance', 'Aprobado en simulación');
     final app = service.applications.single;
-    expect(app['schedule'], hasLength(12));
+    expect(app['quotedSchedule'], hasLength(12));
+    expect(service.balance(app), isEmpty);
+    await db.insertCustomer({'id': 'c', 'name': 'Solicitante verificado'});
+    await db.insertCapitalEntry({'id': 'capital', 'amount': 2000});
+    await service.formalize(id, 'c', 'Acuerdo firmado 01');
+    await service.disburse(id, DateTime.now(), 'entrega-01');
     final total = service
         .balance(app)
         .fold<int>(0, (sum, r) => sum + (r['remainingCents'] as int));
@@ -98,7 +104,7 @@ void main() {
         await CreditDocuments.pdfBytes(service, service.applications.single);
     expect(ascii.decode(bytes.take(4).toList()), '%PDF');
     final broken = jsonDecode(jsonEncode(backup)) as Map<String, dynamic>;
-    ((broken['business']['applications'][0]['schedule'] as List)[0]
+    ((broken['business']['credit_accounts'][0]['schedule'] as List)[0]
         as Map)['totalCents'] = 1;
     await expectLater(db.restoreBusinessBackup(broken), throwsArgumentError);
     expect(

@@ -107,6 +107,40 @@ void main() {
     expect(await db.getCustomers(), isEmpty);
     expect(db.auditLog(), isEmpty);
   });
+  test('La cartera permite crear préstamos y conserva pagos al reiniciar',
+      () async {
+    await db.signIn('admin@contador.local', 'ContadorLocal2026!');
+    await db.insertCustomer({'id': 'original-c', 'name': 'Cliente original'});
+    await db.saveSetting('initial_capital', '500');
+    final loan = {
+      'id': 'original-l',
+      'customer_id': 'original-c',
+      'initial_amount': 100,
+      'increment_value': 0,
+      'start_date': '2026-01-01T00:00:00',
+    };
+    await db.insertLoan(loan);
+    await db.insertPayment({
+      'id': 'original-p',
+      'loan_id': 'original-l',
+      'customer_name': 'Cliente original',
+      'amount': 25,
+      'date': '2026-02-01T12:00:00',
+    });
+    await Hive.close();
+    await db.init();
+    expect((await db.getAllLoans()).single['amount_paid'], 25);
+    expect(await db.getAllPayments(), hasLength(1));
+    expect(db.auditLog().any((e) => e['action'] == 'crear:loans'), isTrue);
+    await expectLater(db.insertLoan(loan), throwsStateError);
+    await expectLater(
+        db.insertLoan({...loan, 'id': 'invalid', 'initial_amount': -1}),
+        throwsArgumentError);
+    await db.signOut();
+    await db.signIn('cliente@contador.local', 'ContadorLocal2026!');
+    await expectLater(
+        db.insertLoan({...loan, 'id': 'unauthorized'}), throwsStateError);
+  });
   test('Escrituras simultáneas conservan registros y bitácora', () async {
     await db.signIn('admin@contador.local', 'ContadorLocal2026!');
     await Future.wait(List.generate(

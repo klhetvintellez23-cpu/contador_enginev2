@@ -8,7 +8,9 @@ import 'services/local_cache_service.dart';
 import 'services/notification_service.dart';
 import 'screens/auth_screen.dart';
 import 'screens/credit_portal_screen.dart';
+import 'screens/home_screen.dart';
 import 'screens/lock_screen.dart';
+import 'widgets/app_ui.dart';
 
 final appNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -87,6 +89,9 @@ class _ContadorEngineAppState extends State<ContadorEngineApp> {
       title: 'Contador Engine',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
+      builder: (context, child) => HeroMode(
+          enabled: !MediaQuery.disableAnimationsOf(context),
+          child: WelcomeEntrance(child: child!)),
       home: StreamBuilder<LocalUser?>(
         stream: LocalDatabaseService().authStateChanges,
         initialData: LocalDatabaseService().currentUser,
@@ -94,7 +99,11 @@ class _ContadorEngineAppState extends State<ContadorEngineApp> {
           final session = snapshot.data;
           if (session != null) {
             return AppLockGate(
-                key: ValueKey(session.id), child: const CreditPortalScreen());
+              key: ValueKey(session.id),
+              child: session.role == UserRole.manager
+                  ? const HomeScreen()
+                  : const CreditPortalScreen(),
+            );
           }
           return const AuthScreen();
         },

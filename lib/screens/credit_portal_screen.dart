@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
@@ -7,565 +6,24 @@ import '../services/credit_service.dart';
 import '../services/local_database_service.dart';
 import '../services/totp_service.dart';
 import '../utils/app_theme.dart';
-import '../utils/document_files.dart';
 import '../utils/credit_documents.dart';
-import 'home_screen.dart';
+import 'credit_workspace.dart';
+import '../models/credit_account.dart';
+import '../widgets/app_ui.dart';
+import '../widgets/finance_ui.dart';
+import '../widgets/credit_overview.dart';
+import '../utils/shared_styles.dart';
+import 'credit_activation_screen.dart';
 
-class CreditPortalScreen extends StatefulWidget {
-  const CreditPortalScreen({super.key});
+class CreditPortalScreen extends StatelessWidget {
+  final bool embedded;
+  final int initialTab;
+  final ValueChanged<int>? onNavigate;
+  const CreditPortalScreen(
+      {super.key, this.embedded = false, this.initialTab = 0, this.onNavigate});
   @override
-  State<CreditPortalScreen> createState() => _CreditPortalScreenState();
-}
-
-class _CreditPortalScreenState extends State<CreditPortalScreen> {
-  final service = CreditService();
-  bool busy = false;
-  String filter = 'all';
-  String search = '';
-  final searchController = TextEditingController();
-  @override
-  void dispose() {
-    searchController.dispose();
-    super.dispose();
-  }
-
-  LocalUser get user => service.db.currentUser!;
-  Future<void> run(Future<void> Function() action) async {
-    if (busy) return;
-    setState(() => busy = true);
-    try {
-      await action();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
-      }
-    } finally {
-      if (mounted) setState(() => busy = false);
-    }
-  }
-
-  Future<void> share(String? path) async {
-    if (path == null) throw StateError('No se pudo generar el documento.');
-    if (path.startsWith('download:')) return;
-    await SharePlus.instance.share(ShareParams(files: [XFile(path)]));
-  }
-
-  Future<void> create() async {
-    final data = await showDialog<Map<String, dynamic>>(
-        context: context, builder: (_) => const CreditApplicationForm());
-    if (data == null) return;
-    await run(() async {
-      await service.create(data['purpose'] as String,
-          data['terms'] as CreditTerms, data['profile'] as FinancialProfile);
-    });
-  }
-
-  Future<void> security() async {
-    await showDialog<void>(
-        context: context, builder: (_) => const AccountSecurityDialog());
-  }
-
-  Future<void> audit() async {
-    final events = service.db.auditLog();
-    await showDialog<void>(
-        context: context,
-        builder: (dialog) => AlertDialog(
-                title: const Text('Bitácora de operaciones'),
-                content: SizedBox(
-                    width: 720,
-                    height: 480,
-                    child: ListView.builder(
-                        itemCount: events.length,
-                        itemBuilder: (_, i) {
-                          final e = events[i];
-                          return ExpansionTile(
-                              title: Text(e['action'].toString()),
-                              subtitle: Text(
-                                  '${e['date']} · ${e['actor']} · ${e['role'] ?? ''}'),
-                              children: [
-                                SelectableText(
-                                    const JsonEncoder.withIndent('  ')
-                                        .convert(e))
-                              ]);
-                        })),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(dialog),
-                      child: const Text('Cerrar'))
-                ]));
-  }
-
-  Future<void> restore() async {
-    final bytes = await DocumentFiles.pickJson();
-    if (bytes == null) return;
-    final decoded = jsonDecode(utf8.decode(bytes));
-    if (decoded is! Map<String, dynamic>) {
-      throw ArgumentError('Formato de respaldo inválido.');
-    }
-    if (!mounted) return;
-    final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (dialog) => AlertDialog(
-                title: const Text('Restaurar respaldo completo'),
-                content: const Text(
-                    'Reemplazará los datos del negocio. Se conservará una evidencia del estado anterior en la bitácora. Las cuentas no cambian. ¿Continuar?'),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(dialog, false),
-                      child: const Text('Cancelar')),
-                  FilledButton(
-                      onPressed: () => Navigator.pop(dialog, true),
-                      child: const Text('Restaurar'))
-                ]));
-    if (confirmed == true) await service.db.restoreBusinessBackup(decoded);
-  }
-
-  int tab = 0;
-
-  Widget actionTile(
-          IconData icon, String title, String subtitle, VoidCallback? action) =>
-      ListTile(
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          leading: Icon(icon, color: AppTheme.primary),
-          title: Text(title),
-          subtitle: Text(subtitle),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: action);
-
-  Future<void> logout() async {
-    final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (dialog) => AlertDialog(
-                title: const Text('¿Cerrar sesión?'),
-                content:
-                    const Text('Tus datos quedarán guardados en este equipo.'),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(dialog, false),
-                      child: const Text('Cancelar')),
-                  FilledButton(
-                      onPressed: () => Navigator.pop(dialog, true),
-                      child: const Text('Cerrar sesión'))
-                ]));
-    if (confirmed == true) await run(service.db.signOut);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (service.db.currentUser == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-    final apps = service.applications;
-    final role = user.role;
-    final manager = role == UserRole.manager;
-    final account = tab == (manager ? 2 : 1);
-    final tools = manager && tab == 1;
-    final summary = service.portfolioSummary;
-    final visible = apps
-        .where((a) =>
-            (filter == 'all' || a['status'] == filter) &&
-            '${a['purpose']} ${a['applicant']}'
-                .toLowerCase()
-                .contains(search.toLowerCase()))
-        .toList();
-    final text = Theme.of(context).textTheme;
-    final guidance = switch (role) {
-      UserRole.client =>
-        'Crea tu solicitud y sigue cada etapa hasta la aprobación.',
-      UserRole.analyst =>
-        'Revisa los ingresos y calcula la capacidad de pago antes de aprobar la etapa.',
-      UserRole.compliance =>
-        'Revisa los expedientes recibidos y registra el motivo de tu decisión.',
-      UserRole.manager =>
-        'Decide sobre las solicitudes revisadas y administra los pagos de créditos aprobados.',
-    };
-    return Scaffold(
-      appBar: AppBar(title: const Text('Contador Engine'), actions: [
-        Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: IconButton(
-                tooltip: 'Mi cuenta',
-                onPressed:
-                    busy ? null : () => setState(() => tab = manager ? 2 : 1),
-                icon: const CircleAvatar(
-                    backgroundColor: Color(0xFFEDE7FA),
-                    foregroundColor: AppTheme.primary,
-                    child: Icon(Icons.person_outline)))),
-      ]),
-      bottomNavigationBar: NavigationBar(
-          selectedIndex: tab,
-          onDestinationSelected:
-              busy ? null : (value) => setState(() => tab = value),
-          destinations: [
-            const NavigationDestination(
-                icon: Icon(Icons.folder_outlined),
-                selectedIcon: Icon(Icons.folder_rounded),
-                label: 'Solicitudes'),
-            if (manager)
-              const NavigationDestination(
-                  icon: Icon(Icons.grid_view_outlined),
-                  selectedIcon: Icon(Icons.grid_view_rounded),
-                  label: 'Herramientas'),
-            const NavigationDestination(
-                icon: Icon(Icons.person_outline),
-                selectedIcon: Icon(Icons.person),
-                label: 'Mi cuenta'),
-          ]),
-      body: SafeArea(
-          child: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 840),
-          child: CustomScrollView(key: ValueKey(tab), slivers: [
-            if (busy)
-              const SliverToBoxAdapter(child: LinearProgressIndicator()),
-            SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-                sliver: SliverToBoxAdapter(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                      Text(
-                          account
-                              ? 'Mi cuenta'
-                              : tools
-                                  ? 'Herramientas'
-                                  : role == UserRole.client
-                                      ? 'Mis solicitudes'
-                                      : 'Solicitudes de crédito',
-                          style: text.headlineMedium
-                              ?.copyWith(fontWeight: FontWeight.w700)),
-                      const SizedBox(height: 8),
-                      Text(
-                          account
-                              ? 'Administra tu acceso y seguridad.'
-                              : tools
-                                  ? 'Control y configuración del negocio.'
-                                  : 'Hola, ${user.name}.',
-                          style: const TextStyle(color: AppTheme.muted)),
-                      const SizedBox(height: 24),
-                      if (account) ...[
-                        Card(
-                            child: Padding(
-                                padding: const EdgeInsets.all(24),
-                                child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      const CircleAvatar(
-                                          radius: 28,
-                                          backgroundColor: Color(0xFFEDE7FA),
-                                          child: Icon(Icons.person_outline,
-                                              color: AppTheme.primary)),
-                                      const SizedBox(height: 16),
-                                      Text(user.name, style: text.titleLarge),
-                                      const SizedBox(height: 4),
-                                      Text(user.email ?? ''),
-                                      const SizedBox(height: 12),
-                                      Text(role.label,
-                                          style: const TextStyle(
-                                              color: AppTheme.primary,
-                                              fontWeight: FontWeight.bold)),
-                                    ]))),
-                        const SizedBox(height: 16),
-                        Card(
-                            child: actionTile(
-                                Icons.lock_outline,
-                                'Seguridad de cuenta',
-                                'Contraseña y autenticación en dos pasos',
-                                busy ? null : security)),
-                        const SizedBox(height: 24),
-                        OutlinedButton.icon(
-                            onPressed: busy ? null : logout,
-                            icon: const Icon(Icons.logout),
-                            label: const Text('Cerrar sesión')),
-                        const SizedBox(height: 24),
-                        const Text(
-                            'Simulación académica. La información se guarda en este equipo; no se realizan operaciones bancarias reales.',
-                            style:
-                                TextStyle(color: AppTheme.muted, height: 1.5)),
-                      ] else if (tools) ...[
-                        Card(
-                            child: Column(children: [
-                          actionTile(
-                              Icons.history,
-                              'Auditoría',
-                              'Consulta quién hizo cada cambio y cuándo.',
-                              busy ? null : () => run(audit)),
-                          const Divider(height: 1),
-                          actionTile(
-                              Icons.file_download_outlined,
-                              'Respaldar',
-                              'Guarda una copia de los datos del negocio.',
-                              busy
-                                  ? null
-                                  : () => run(() async {
-                                        await share(await DocumentFiles.save(
-                                            'ContadorEngine_respaldo.json',
-                                            utf8.encode(jsonEncode(service.db
-                                                .exportBusinessBackup()))));
-                                      })),
-                          const Divider(height: 1),
-                          actionTile(
-                              Icons.restore,
-                              'Restaurar',
-                              'Recupera los datos de un respaldo. Requiere confirmación.',
-                              busy ? null : () => run(restore)),
-                        ])),
-                        const SizedBox(height: 16),
-                        Card(
-                            child: Column(children: [
-                          actionTile(
-                              Icons.tune,
-                              'Reglas de evaluación',
-                              'Configura el límite de endeudamiento (DTI).',
-                              busy
-                                  ? null
-                                  : () => run(() async {
-                                        final value = await requestText(
-                                            context,
-                                            'DTI máximo (%)',
-                                            'Porcentaje de 1 a 100');
-                                        if (value != null) {
-                                          await service.configureRules(
-                                              double.parse(value.replaceAll(
-                                                      ',', '.')) /
-                                                  100);
-                                        }
-                                      })),
-                          const Divider(height: 1),
-                          actionTile(
-                              Icons.inventory_2_outlined,
-                              'Cartera anterior',
-                              'Consulta los préstamos del módulo histórico.',
-                              busy
-                                  ? null
-                                  : () => Navigator.push(
-                                      context,
-                                      MaterialPageRoute<void>(
-                                          builder: (_) => const HomeScreen()))),
-                        ])),
-                      ] else ...[
-                        LayoutBuilder(
-                            builder: (context, constraints) =>
-                                Wrap(spacing: 12, runSpacing: 12, children: [
-                                  metric(
-                                      'Solicitudes',
-                                      '${apps.length}',
-                                      Icons.folder_outlined,
-                                      (constraints.maxWidth - 12) / 2),
-                                  metric(
-                                      'Saldo pendiente',
-                                      'USD ${(summary['balanceCents']! / 100).toStringAsFixed(2)}',
-                                      Icons.account_balance_wallet_outlined,
-                                      (constraints.maxWidth - 12) / 2),
-                                ])),
-                        const SizedBox(height: 16),
-                        Container(
-                            padding: const EdgeInsets.all(18),
-                            decoration: BoxDecoration(
-                                color: const Color(0xFFEDE7FA),
-                                borderRadius: BorderRadius.circular(18)),
-                            child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Tu siguiente paso',
-                                      style: text.titleSmall?.copyWith(
-                                          color: AppTheme.primary,
-                                          fontWeight: FontWeight.bold)),
-                                  const SizedBox(height: 6),
-                                  Text(guidance,
-                                      style: const TextStyle(height: 1.5)),
-                                  if (role == UserRole.client) ...[
-                                    const SizedBox(height: 14),
-                                    FilledButton.icon(
-                                        onPressed: busy ? null : create,
-                                        icon: const Icon(Icons.add),
-                                        label: const Text('Nueva solicitud'))
-                                  ],
-                                ])),
-                        if (summary['overdue']! > 0)
-                          Padding(
-                              padding: const EdgeInsets.only(top: 12),
-                              child: Text(
-                                  '${summary['overdue']} créditos tienen cuotas vencidas. Abre el expediente para revisar los pagos.',
-                                  style: TextStyle(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .error))),
-                        const SizedBox(height: 24),
-                        TextField(
-                            controller: searchController,
-                            decoration: const InputDecoration(
-                                labelText: 'Buscar solicitud',
-                                hintText: 'Solicitante o destino del crédito',
-                                prefixIcon: Icon(Icons.search)),
-                            onChanged: (value) =>
-                                setState(() => search = value)),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                            key: ValueKey(filter),
-                            initialValue: filter,
-                            isExpanded: true,
-                            decoration: const InputDecoration(
-                                labelText: 'Estado',
-                                prefixIcon: Icon(Icons.filter_list)),
-                            items: [
-                              const DropdownMenuItem(
-                                  value: 'all',
-                                  child: Text('Todos los estados')),
-                              ...ApplicationStatus.values.map((s) =>
-                                  DropdownMenuItem(
-                                      value: s.name, child: Text(s.label)))
-                            ],
-                            onChanged: (value) =>
-                                setState(() => filter = value!)),
-                        const SizedBox(height: 20),
-                        Text(
-                            '${visible.length} ${visible.length == 1 ? 'solicitud' : 'solicitudes'}',
-                            style: text.titleSmall),
-                      ],
-                    ]))),
-            if (!account && !tools)
-              SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
-                  sliver: visible.isEmpty
-                      ? SliverToBoxAdapter(
-                          child: Card(
-                              child: Padding(
-                                  padding: const EdgeInsets.all(28),
-                                  child: Column(children: [
-                                    const Icon(Icons.folder_open_rounded,
-                                        size: 42, color: AppTheme.muted),
-                                    const SizedBox(height: 12),
-                                    Text(
-                                        apps.isEmpty
-                                            ? 'Todo empieza con una solicitud'
-                                            : 'Sin coincidencias',
-                                        style: text.titleMedium),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                        apps.isEmpty
-                                            ? (role == UserRole.client
-                                                ? 'Pulsa Nueva solicitud para crear tu primer borrador.'
-                                                : 'Aquí aparecerán las solicitudes cuando se registren.')
-                                            : 'Prueba con otro nombre o cambia el estado.',
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                            color: AppTheme.muted,
-                                            height: 1.5)),
-                                    if (apps.isNotEmpty)
-                                      TextButton(
-                                          onPressed: () => setState(() {
-                                                filter = 'all';
-                                                search = '';
-                                                searchController.clear();
-                                              }),
-                                          child: const Text(
-                                              'Ver todas las solicitudes')),
-                                  ]))))
-                      : SliverList.builder(
-                          itemCount: visible.length,
-                          itemBuilder: (context, i) {
-                            final a = visible[i];
-                            final terms = a['terms'] as Map;
-                            return Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: Card(
-                                    clipBehavior: Clip.antiAlias,
-                                    child: InkWell(
-                                        onTap: busy
-                                            ? null
-                                            : () async {
-                                                await Navigator.push(
-                                                    context,
-                                                    MaterialPageRoute<void>(
-                                                        builder: (_) =>
-                                                            CreditDetailScreen(
-                                                                id: a['id']
-                                                                    as String)));
-                                                if (mounted) setState(() {});
-                                              },
-                                        child: Padding(
-                                            padding: const EdgeInsets.all(20),
-                                            child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  CreditStatusBadge(
-                                                      status: a['status']
-                                                          as String),
-                                                  const SizedBox(height: 12),
-                                                  Text(a['purpose'] as String,
-                                                      style: text.titleMedium
-                                                          ?.copyWith(
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .bold)),
-                                                  const SizedBox(height: 6),
-                                                  Text(a['applicant'] as String,
-                                                      style: const TextStyle(
-                                                          color:
-                                                              AppTheme.muted)),
-                                                  const SizedBox(height: 16),
-                                                  Wrap(
-                                                      spacing: 16,
-                                                      runSpacing: 8,
-                                                      children: [
-                                                        Text(
-                                                            'USD ${(terms['principal'] as num).toStringAsFixed(2)}',
-                                                            style: text
-                                                                .titleMedium),
-                                                        Text(
-                                                            '${terms['months']} meses · ${terms['method'] == 'french' ? 'Francés' : 'Alemán'}'),
-                                                      ]),
-                                                  const SizedBox(height: 12),
-                                                  const Row(children: [
-                                                    Expanded(
-                                                        child: Text(
-                                                            'Ver solicitud',
-                                                            style: TextStyle(
-                                                                color: AppTheme
-                                                                    .primary,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .bold))),
-                                                    Icon(
-                                                        Icons
-                                                            .arrow_forward_rounded,
-                                                        size: 20,
-                                                        color: AppTheme.primary)
-                                                  ]),
-                                                ])))));
-                          })),
-          ]),
-        ),
-      )),
-    );
-  }
-
-  Widget metric(String label, String value, IconData icon, double width) =>
-      SizedBox(
-          width: width,
-          child: Card(
-              child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(icon, color: AppTheme.primary, size: 22),
-                        const SizedBox(height: 12),
-                        Text(value,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
-                                ?.copyWith(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 4),
-                        Text(label,
-                            style: const TextStyle(color: AppTheme.muted)),
-                      ]))));
+  Widget build(BuildContext context) => CreditWorkspace(
+      embedded: embedded, initialTab: initialTab, onNavigate: onNavigate);
 }
 
 class CreditStatusBadge extends StatelessWidget {
@@ -584,9 +42,19 @@ class CreditStatusBadge extends StatelessWidget {
         decoration: BoxDecoration(
             color: color.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(20)),
-        child: Text(ApplicationStatus.values.byName(status).label,
-            style: TextStyle(
-                color: color, fontWeight: FontWeight.w600, fontSize: 13)));
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+              width: 5,
+              height: 5,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 6),
+          Flexible(
+              child: Text(ApplicationStatus.values.byName(status).label,
+                  style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12))),
+        ]));
   }
 }
 
@@ -629,28 +97,47 @@ class CreditProgress extends StatelessWidget {
   }
 }
 
-Future<String?> requestText(
-    BuildContext context, String title, String label) async {
+Future<String?> requestText(BuildContext context, String title, String label,
+    {int minLength = 1, String? explanation}) async {
   final controller = TextEditingController();
-  final result = await showDialog<String>(
+  final form = GlobalKey<FormState>();
+  final result = await showBlurDialog<String>(
       context: context,
       builder: (dialog) => AlertDialog(
               title: Text(title),
-              content: TextField(
-                  controller: controller,
-                  decoration: InputDecoration(labelText: label),
-                  autofocus: true),
+              scrollable: true,
+              content: Form(
+                  key: form,
+                  child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (explanation != null) ...[
+                          Text(explanation),
+                          const SizedBox(height: 16)
+                        ],
+                        TextFormField(
+                            controller: controller,
+                            decoration: InputDecoration(labelText: label),
+                            validator: (v) =>
+                                (v?.trim().length ?? 0) < minLength
+                                    ? 'Escribe al menos $minLength caracteres.'
+                                    : null,
+                            autofocus: true)
+                      ])),
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(dialog),
                     child: const Text('Cancelar')),
                 FilledButton(
-                    onPressed: () =>
-                        Navigator.pop(dialog, controller.text.trim()),
+                    onPressed: () {
+                      if (form.currentState!.validate()) {
+                        Navigator.pop(dialog, controller.text.trim());
+                      }
+                    },
                     child: const Text('Confirmar'))
               ]));
-  // El controlador se libera después de que termine la animación del diálogo.
-  Future<void>.delayed(const Duration(seconds: 1), controller.dispose);
+  controller.dispose();
   return result;
 }
 
@@ -684,7 +171,7 @@ class _CreditDetailScreenState extends State<CreditDetailScreen> {
     final app = service.applications.firstWhere((a) => a['id'] == widget.id);
     final role = service.db.currentUser!.role;
     final status = app['status'];
-    final evaluation = app['evaluation'] as Map?;
+    final lifecycle = status == 'approved' ? service.lifecycle(app) : null;
     final canDecide = (role == UserRole.analyst && status == 'submitted') ||
         (role == UserRole.compliance && status == 'compliance') ||
         (role == UserRole.manager && status == 'management');
@@ -703,17 +190,14 @@ class _CreditDetailScreenState extends State<CreditDetailScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (busy) const LinearProgressIndicator(),
-                        Text(app['purpose'] as String,
-                            style: Theme.of(context).textTheme.headlineSmall),
-                        const SizedBox(height: 8),
-                        Text(app['applicant'] as String,
-                            style: const TextStyle(color: AppTheme.muted)),
-                        const SizedBox(height: 16),
-                        CreditStatusBadge(status: status as String),
-                        const SizedBox(height: 16),
-                        if (!['rejected', 'returned'].contains(status))
-                          CreditProgress(status: status),
-                        const SizedBox(height: 16),
+                        CreditOverview(
+                            application: app,
+                            badge: CreditStatusBadge(status: status as String),
+                            lifecycle: lifecycle?.label,
+                            progress: ['rejected', 'returned'].contains(status)
+                                ? null
+                                : CreditProgress(status: status)),
+                        const SizedBox(height: 14),
                         Card(
                             child: Padding(
                                 padding: const EdgeInsets.all(18),
@@ -737,9 +221,18 @@ class _CreditDetailScreenState extends State<CreditDetailScreen> {
                                             'compliance' =>
                                               'Cumplimiento revisará el expediente antes de enviarlo a gerencia.',
                                             'management' =>
-                                              'Gerencia debe registrar la decisión final para generar el plan de pagos.',
-                                            'approved' =>
-                                              'Consulta las cuotas y los pagos registrados. Gerencia puede registrar un nuevo pago.',
+                                              'Gerencia debe revisar el expediente y registrar la decisión final.',
+                                            'approved' => switch (lifecycle) {
+                                                CreditLifecycle
+                                                      .awaitingFormalization =>
+                                                  'La solicitud está aprobada. Falta registrar el acuerdo y el desembolso para activar el crédito.',
+                                                CreditLifecycle.formalized =>
+                                                  'El acuerdo está registrado. Falta registrar la entrega real para activar el crédito.',
+                                                CreditLifecycle.legacy =>
+                                                  'Se conservan el plan y los pagos anteriores. Gerencia debe verificar el desembolso y conciliar la caja antes de registrar nuevos cobros.',
+                                                _ =>
+                                                  'Consulta el plan de cuotas y los cobros del crédito activo.',
+                                              },
                                             _ =>
                                               'Esta solicitud fue rechazada. Consulta el motivo en el historial de decisiones.',
                                           },
@@ -748,53 +241,8 @@ class _CreditDetailScreenState extends State<CreditDetailScreen> {
                                               height: 1.5)),
                                     ]))),
                         const SizedBox(height: 12),
-                        Card(
-                            child: Padding(
-                                padding: const EdgeInsets.all(18),
-                                child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text('Resumen de la solicitud',
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleMedium),
-                                      const SizedBox(height: 12),
-                                      Text(
-                                          'Monto solicitado: USD ${(app['terms'] as Map)['principal']}'),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                          'Plazo: ${(app['terms'] as Map)['months']} meses · Tasa nominal anual: ${(app['terms'] as Map)['annualRate']}%'),
-                                      const Divider(height: 28),
-                                      Text(
-                                          'Ingresos mensuales: USD ${(app['profile'] as Map)['income']}'),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                          'Gastos: USD ${(app['profile'] as Map)['expenses']}'),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                          'Cuotas de otras deudas: USD ${(app['profile'] as Map)['debtPayments']}'),
-                                    ]))),
-                        const SizedBox(height: 12),
-                        if (evaluation != null)
-                          Card(
-                              child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                            'DTI: ${((evaluation['dti'] as num) * 100).toStringAsFixed(2)}% · Puntaje: ${evaluation['score']}/100'),
-                                        Text(
-                                            'Disponible tras cuota: USD ${(evaluation['disposableIncome'] as num).toStringAsFixed(2)}'),
-                                        Text(evaluation['eligible'] == true
-                                            ? 'Recomendación favorable'
-                                            : 'Recomendación no favorable'),
-                                        Text(
-                                            'Reglas v${evaluation['rulesVersion']}: ${evaluation['explanation']}'),
-                                      ]))),
-                        const SizedBox(height: 16),
+                        CreditFinancialSummary(application: app),
+                        const SectionHeading('Acciones del expediente'),
                         Wrap(spacing: 8, runSpacing: 8, children: [
                           if (role == UserRole.client &&
                               ['draft', 'returned'].contains(status))
@@ -802,12 +250,13 @@ class _CreditDetailScreenState extends State<CreditDetailScreen> {
                                 onPressed: busy
                                     ? null
                                     : () => run(() async {
-                                          final data = await showDialog<
+                                          final data = await Navigator.push<
                                                   Map<String, dynamic>>(
-                                              context: context,
-                                              builder: (_) =>
-                                                  CreditApplicationForm(
-                                                      application: app));
+                                              context,
+                                              MaterialPageRoute(
+                                                  builder: (_) =>
+                                                      CreditApplicationForm(
+                                                          application: app)));
                                           if (data != null) {
                                             await service.revise(
                                                 widget.id,
@@ -834,22 +283,40 @@ class _CreditDetailScreenState extends State<CreditDetailScreen> {
                                 child: const Text('Calcular DTI y scoring')),
                           if (canDecide)
                             ...{
-                              'advance': 'Aprobar etapa',
+                              'advance': role == UserRole.manager
+                                  ? 'Aprobar solicitud'
+                                  : 'Aprobar etapa',
                               'return': 'Devolver',
                               'reject': 'Rechazar'
                             }.entries.map((e) => OutlinedButton(
+                                style: e.key == 'reject'
+                                    ? OutlinedButton.styleFrom(
+                                        foregroundColor:
+                                            Theme.of(context).colorScheme.error,
+                                        side: BorderSide(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .error))
+                                    : null,
                                 onPressed: busy
                                     ? null
-                                    : () => run(() async {
-                                          final reason = await requestText(
-                                              context,
-                                              e.value,
-                                              'Motivo obligatorio');
-                                          if (reason != null) {
-                                            await service.decide(
-                                                widget.id, e.key, reason);
-                                          }
-                                        }),
+                                    : () async {
+                                        final reason = await requestText(
+                                            context,
+                                            e.value,
+                                            'Motivo obligatorio',
+                                            minLength: 5,
+                                            explanation: e.key == 'advance' &&
+                                                    role == UserRole.manager
+                                                ? 'Confirmar la aprobación no registra un desembolso. Después deberás formalizar el acuerdo y registrar la entrega real.'
+                                                : e.key == 'reject'
+                                                    ? 'La solicitud quedará rechazada. El solicitante podrá consultar este motivo.'
+                                                    : 'Registra la decisión y su motivo para continuar el expediente.');
+                                        if (reason != null) {
+                                          await run(() => service.decide(
+                                              widget.id, e.key, reason));
+                                        }
+                                      },
                                 child: Text(e.value))),
                           ...[false, true].map((pdf) => OutlinedButton.icon(
                               icon: const Icon(Icons.download),
@@ -873,7 +340,31 @@ class _CreditDetailScreenState extends State<CreditDetailScreen> {
                                         }
                                       }))),
                         ]),
-                        if (status == 'approved') ...[
+                        if (status == 'approved' &&
+                            role == UserRole.manager &&
+                            lifecycle != CreditLifecycle.active) ...[
+                          const SizedBox(height: 20),
+                          FilledButton.icon(
+                              icon: const Icon(Icons.assignment_outlined),
+                              label: Text(switch (lifecycle) {
+                                CreditLifecycle.awaitingFormalization =>
+                                  'Formalizar crédito',
+                                CreditLifecycle.formalized =>
+                                  'Registrar desembolso',
+                                _ => 'Conciliar crédito anterior'
+                              }),
+                              onPressed: busy
+                                  ? null
+                                  : () => run(() => Navigator.push(
+                                      context,
+                                      MaterialPageRoute<void>(
+                                          builder: (_) =>
+                                              CreditActivationScreen(
+                                                  applicationId: widget.id))))),
+                        ],
+                        if (status == 'approved' &&
+                            [CreditLifecycle.active, CreditLifecycle.legacy]
+                                .contains(lifecycle)) ...[
                           const SizedBox(height: 16),
                           Text(
                               total == 0
@@ -882,30 +373,33 @@ class _CreditDetailScreenState extends State<CreditDetailScreen> {
                               style: Theme.of(context).textTheme.titleLarge),
                           const Text(
                               'Las cuotas incluyen cargos pactados. Los anticipos adelantan cuotas completas o parciales; esta simulación no recalcula intereses por prepago.'),
-                          if (role == UserRole.manager && total > 0)
+                          if (role == UserRole.manager &&
+                              total > 0 &&
+                              lifecycle == CreditLifecycle.active)
                             FilledButton.icon(
                                 icon: const Icon(Icons.payments),
                                 label: const Text('Registrar pago'),
                                 onPressed: busy
                                     ? null
-                                    : () => run(() async {
-                                          final amount = await requestText(
-                                              context,
-                                              'Registrar pago',
-                                              'Monto USD');
-                                          if (amount == null) return;
-                                          if (!context.mounted) return;
-                                          final ref = await requestText(
-                                              context,
-                                              'Referencia del pago',
-                                              'Recibo o referencia única');
-                                          if (ref == null) return;
-                                          await service.pay(
-                                              widget.id,
-                                              double.parse(
-                                                  amount.replaceAll(',', '.')),
-                                              ref);
-                                        })),
+                                    : () async {
+                                        final amount = await requestText(
+                                            context,
+                                            'Registrar pago',
+                                            'Monto USD');
+                                        if (amount == null) return;
+                                        if (!context.mounted) return;
+                                        final ref = await requestText(
+                                            context,
+                                            'Referencia del pago',
+                                            'Recibo o referencia única',
+                                            minLength: 3);
+                                        if (ref == null) return;
+                                        await run(() => service.pay(
+                                            widget.id,
+                                            double.parse(
+                                                amount.replaceAll(',', '.')),
+                                            ref));
+                                      }),
                           const SizedBox(height: 16),
                           if (MediaQuery.sizeOf(context).width < 650)
                             ...balances.map((r) => Padding(
@@ -983,18 +477,19 @@ class _CreditDetailScreenState extends State<CreditDetailScreen> {
                                   ? TextButton(
                                       onPressed: busy
                                           ? null
-                                          : () => run(() async {
-                                                final reason =
-                                                    await requestText(
-                                                        context,
-                                                        'Anular pago',
-                                                        'Motivo obligatorio');
-                                                if (reason != null) {
-                                                  await service.voidPayment(
-                                                      p['id'] as String,
-                                                      reason);
-                                                }
-                                              }),
+                                          : () async {
+                                              final reason = await requestText(
+                                                  context,
+                                                  'Anular pago',
+                                                  'Motivo obligatorio',
+                                                  minLength: 5);
+                                              if (reason != null) {
+                                                await run(() =>
+                                                    service.voidPayment(
+                                                        p['id'] as String,
+                                                        reason));
+                                              }
+                                            },
                                       child: const Text('Anular'))
                                   : null)),
                         ],
@@ -1029,19 +524,22 @@ class CreditApplicationForm extends StatefulWidget {
 
 class _CreditApplicationFormState extends State<CreditApplicationForm> {
   final fields = <String, TextEditingController>{};
+  final form = GlobalKey<FormState>();
   AmortizationMethod method = AmortizationMethod.french;
+  int step = 0;
+  bool finished = false;
   String? error;
   static const labels = {
-    'purpose': 'Destino del crédito',
+    'purpose': '¿Para qué lo necesitas?',
     'principal': 'Monto solicitado (USD)',
     'annualRate': 'Tasa nominal anual (%)',
     'months': 'Plazo en meses',
-    'income': 'Ingresos mensuales',
-    'expenses': 'Gastos mensuales sin deudas',
-    'debtPayments': 'Cuotas mensuales de otras deudas',
-    'monthlyInsurance': 'Seguro por mes (USD)',
-    'openingFee': 'Comisión única (USD)',
-    'lateFee': 'Mora única por cuota vencida (USD)'
+    'income': 'Ingresos mensuales (USD)',
+    'expenses': 'Gastos sin deudas (USD)',
+    'debtPayments': 'Cuotas de otras deudas (USD)',
+    'monthlyInsurance': 'Seguro mensual (USD)',
+    'openingFee': 'Comisión inicial (USD)',
+    'lateFee': 'Mora única por cuota vencida (USD)',
   };
   @override
   void initState() {
@@ -1069,134 +567,303 @@ class _CreditApplicationFormState extends State<CreditApplicationForm> {
 
   @override
   void dispose() {
-    for (final c in fields.values) {
-      c.dispose();
+    for (final field in fields.values) {
+      field.dispose();
     }
     super.dispose();
   }
 
   double number(String key) =>
       double.parse(fields[key]!.text.trim().replaceAll(',', '.'));
-  void submit() {
+  CreditTerms get terms => CreditTerms(
+      principal: number('principal'),
+      annualRate: number('annualRate'),
+      months: int.parse(fields['months']!.text.trim()),
+      method: method,
+      monthlyInsurance: number('monthlyInsurance'),
+      openingFee: number('openingFee'),
+      lateFee: number('lateFee'));
+  FinancialProfile get profile => FinancialProfile(
+      income: number('income'),
+      expenses: number('expenses'),
+      debtPayments: number('debtPayments'));
+  void next() {
+    if (!form.currentState!.validate()) return;
     try {
-      final terms = CreditTerms(
-          principal: number('principal'),
-          annualRate: number('annualRate'),
-          months: int.parse(fields['months']!.text.trim()),
-          method: method,
-          monthlyInsurance: number('monthlyInsurance'),
-          openingFee: number('openingFee'),
-          lateFee: number('lateFee'));
-      final profile = FinancialProfile(
-          income: number('income'),
-          expenses: number('expenses'),
-          debtPayments: number('debtPayments'));
+      if (step == 0) {
+        terms.validate();
+      } else {
+        profile.validate();
+      }
+      setState(() {
+        step++;
+        error = null;
+      });
+    } catch (e) {
+      setState(() =>
+          error = e.toString().replaceFirst(RegExp(r'^\w+(?: \w+)*: '), ''));
+    }
+  }
+
+  void submit(bool send) {
+    if (finished) return;
+    try {
       terms.validate();
       profile.validate();
       if (fields['purpose']!.text.trim().length < 5) {
         throw ArgumentError('Explica el destino del crédito.');
       }
+      finished = true;
       Navigator.pop(context, {
         'purpose': fields['purpose']!.text.trim(),
         'terms': terms,
-        'profile': profile
+        'profile': profile,
+        'send': send
       });
     } catch (e) {
-      setState(() => error = 'Revisa los campos. ${e.toString()}');
+      setState(() => error = 'Revisa tus datos. $e');
     }
   }
 
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-          title: Text(widget.application == null
-              ? 'Nueva solicitud'
-              : 'Corregir solicitud'),
-          content: SizedBox(
-              width: 540,
-              child: SingleChildScrollView(
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                const Text(
-                    'Guarda tus datos como borrador. Podrás revisarlos antes de enviarlos a análisis.',
-                    style: TextStyle(color: AppTheme.muted, height: 1.5)),
-                const SizedBox(height: 24),
-                Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('1. Tu crédito',
-                        style: Theme.of(context).textTheme.titleMedium)),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<AmortizationMethod>(
-                    initialValue: method,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                        labelText: 'Sistema de amortización'),
-                    items: AmortizationMethod.values
-                        .map((m) => DropdownMenuItem(
-                            value: m,
-                            child: Text(m == AmortizationMethod.french
-                                ? 'Francés'
-                                : 'Alemán')))
-                        .toList(),
-                    onChanged: (m) => setState(() => method = m!)),
-                const SizedBox(height: 8),
-                Text(
-                    method == AmortizationMethod.french
-                        ? 'Cuota base constante durante el plazo.'
-                        : 'Capital constante; las cuotas disminuyen.',
-                    style:
-                        const TextStyle(color: AppTheme.muted, fontSize: 12)),
-                ...['purpose', 'principal', 'annualRate', 'months'].map(field),
-                const SizedBox(height: 24),
-                Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('2. Tu capacidad de pago',
-                        style: Theme.of(context).textTheme.titleMedium)),
-                const SizedBox(height: 8),
-                const Text(
-                    'Indica valores mensuales en USD. Escribe 0 si no tienes gastos o deudas.',
-                    style: TextStyle(color: AppTheme.muted)),
-                ...['income', 'expenses', 'debtPayments'].map(field),
-                const SizedBox(height: 20),
-                ExpansionTile(
-                    tilePadding: EdgeInsets.zero,
-                    title: const Text('3. Cargos adicionales'),
-                    subtitle: const Text('Opcionales · Inicialmente en cero'),
-                    children: [
-                      ...['monthlyInsurance', 'openingFee', 'lateFee']
-                          .map(field),
-                      const SizedBox(height: 12),
-                    ]),
-                if (error != null)
-                  Semantics(
-                      liveRegion: true,
-                      child: Text(error!,
-                          style: TextStyle(
-                              color: Theme.of(context).colorScheme.error))),
-              ]))),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar')),
-            FilledButton(
-                onPressed: submit, child: const Text('Guardar borrador'))
-          ]);
-
   Widget field(String key) => Padding(
       padding: const EdgeInsets.only(top: 18),
-      child: TextField(
+      child: TextFormField(
           controller: fields[key],
           textInputAction: TextInputAction.next,
+          maxLines: key == 'purpose' ? 2 : 1,
           decoration: InputDecoration(
-              label: Text(labels[key]!),
-              floatingLabelBehavior: FloatingLabelBehavior.always,
-              hintText: key == 'purpose'
-                  ? 'Ej. Compra de equipo para mi negocio'
-                  : '0',
-              helperText: key == 'purpose'
-                  ? 'Describe para qué necesitas el crédito.'
-                  : null),
+              labelText: labels[key],
+              hintText:
+                  key == 'purpose' ? 'Compra de equipo para mi negocio' : '0'),
           keyboardType: key == 'purpose'
               ? TextInputType.text
-              : const TextInputType.numberWithOptions(decimal: true)));
+              : const TextInputType.numberWithOptions(decimal: true),
+          validator: (text) {
+            if (key == 'purpose') {
+              return (text?.trim().length ?? 0) < 5
+                  ? 'Explica el destino (mínimo 5 caracteres).'
+                  : null;
+            }
+            final value =
+                double.tryParse((text ?? '').trim().replaceAll(',', '.'));
+            if (value == null || !value.isFinite || value < 0) {
+              return 'Ingresa un importe válido.';
+            }
+            if (['principal', 'income', 'months'].contains(key) && value <= 0) {
+              return 'Debe ser mayor que cero.';
+            }
+            if (key == 'months' && int.tryParse((text ?? '').trim()) == null) {
+              return 'Ingresa meses completos.';
+            }
+            return null;
+          }));
+  Widget value(String label, String amount) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(
+            child: Text(label, style: const TextStyle(color: AppTheme.muted))),
+        const SizedBox(width: 16),
+        Flexible(
+            child: Text(amount,
+                textAlign: TextAlign.right,
+                style: const TextStyle(fontWeight: FontWeight.w700)))
+      ]));
+  Widget review() {
+    final plan = CreditEngine.schedule(terms, DateTime.now());
+    final maximum =
+        plan.map((r) => r.totalCents).reduce((a, b) => a > b ? a : b);
+    String usd(num cents) => 'USD ${(cents / 100).toStringAsFixed(2)}';
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Card(
+          child: Padding(
+              padding: const EdgeInsets.all(22),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(fields['purpose']!.text.trim(),
+                        style: const TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 12),
+                    value('Monto solicitado',
+                        usd((terms.principal * 100).round())),
+                    value('Plazo', '${terms.months} meses'),
+                    value(
+                        'Modalidad',
+                        method == AmortizationMethod.french
+                            ? 'Francés · Cuota base fija'
+                            : 'Alemán · Capital constante'),
+                    value('Tasa nominal anual', '${terms.annualRate}%'),
+                    value('Primera cuota estimada', usd(plan.first.totalCents)),
+                    value('Cuota máxima estimada', usd(maximum)),
+                    value('Última cuota estimada', usd(plan.last.totalCents)),
+                    value('Total estimado sin mora',
+                        usd(plan.fold<int>(0, (s, r) => s + r.totalCents))),
+                    value('Interés total estimado',
+                        usd(plan.fold<int>(0, (s, r) => s + r.interestCents))),
+                    value('Seguro por mes',
+                        usd((terms.monthlyInsurance * 100).round())),
+                    value('Comisión inicial',
+                        usd((terms.openingFee * 100).round())),
+                    value('Mora por cuota vencida',
+                        usd((terms.lateFee * 100).round())),
+                  ]))),
+      const SizedBox(height: 18),
+      ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          title: const Text('Tu capacidad de pago'),
+          children: [
+            value('Ingresos mensuales',
+                'USD ${profile.income.toStringAsFixed(2)}'),
+            value('Gastos sin deudas',
+                'USD ${profile.expenses.toStringAsFixed(2)}'),
+            value('Otras cuotas',
+                'USD ${profile.debtPayments.toStringAsFixed(2)}')
+          ]),
+      const SizedBox(height: 18),
+      const Text(
+          'Las fechas finales se fijan al registrar el desembolso. Los anticipos cubren cuotas y no recalculan intereses en el motor actual. Enviar la solicitud no garantiza aprobación ni entrega de fondos.',
+          style: TextStyle(color: AppTheme.muted, height: 1.5)),
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final titles = [
+      'Tu próximo proyecto',
+      'Tu capacidad de pago',
+      'Revisa tu solicitud'
+    ];
+    return Scaffold(
+        appBar: AppBar(
+            title: Text(widget.application == null
+                ? 'Solicitar préstamo'
+                : 'Corregir solicitud'),
+            leading: BackButton(
+                onPressed: () => step > 0
+                    ? setState(() => step--)
+                    : Navigator.pop(context))),
+        body: PageFrame(
+            maxWidth: 720,
+            child: ListView(padding: const EdgeInsets.all(24), children: [
+              Semantics(
+                  label: 'Paso ${step + 1} de 3',
+                  child: Row(children: [
+                    Expanded(
+                        child: Text('Paso ${step + 1} de 3',
+                            style: const TextStyle(color: AppTheme.muted))),
+                    TextButton(
+                        onPressed: () {
+                          if (step > 0) setState(() => step = 0);
+                        },
+                        child: const Text('Condiciones'))
+                  ])),
+              TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 1 / 3, end: (step + 1) / 3),
+                  duration: AppMotion.duration(context),
+                  builder: (_, progress, __) => LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 4,
+                      borderRadius: BorderRadius.circular(4))),
+              const SizedBox(height: 24),
+              Text(titles[step],
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 10),
+              Text(
+                  step == 0
+                      ? 'Cuéntanos qué necesitas para avanzar.'
+                      : step == 1
+                          ? 'Indica los valores mensuales en USD. Escribe 0 cuando corresponda.'
+                          : 'Comprueba las condiciones y tus datos antes de enviar.',
+                  style: const TextStyle(color: AppTheme.muted)),
+              const SizedBox(height: 20),
+              Form(
+                  key: form,
+                  child: AnimatedSize(
+                      duration: AppMotion.duration(context),
+                      alignment: Alignment.topCenter,
+                      child: AnimatedSwitcher(
+                          duration: AppMotion.duration(context, 280),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          child: Column(
+                              key: ValueKey(step),
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (step == 0) ...[
+                                  field('principal'),
+                                  field('purpose'),
+                                  field('months'),
+                                  const SizedBox(height: 18),
+                                  DropdownButtonFormField<AmortizationMethod>(
+                                      initialValue: method,
+                                      isExpanded: true,
+                                      decoration: const InputDecoration(
+                                          labelText: 'Modalidad de cuotas'),
+                                      items: const [
+                                        DropdownMenuItem(
+                                            value: AmortizationMethod.french,
+                                            child: Text(
+                                                'Francés · Cuota base fija')),
+                                        DropdownMenuItem(
+                                            value: AmortizationMethod.german,
+                                            child: Text(
+                                                'Alemán · Capital constante'))
+                                      ],
+                                      onChanged: (value) =>
+                                          setState(() => method = value!)),
+                                  field('annualRate'),
+                                  const SizedBox(height: 16),
+                                  ExpansionTile(
+                                      tilePadding: EdgeInsets.zero,
+                                      maintainState: true,
+                                      title: const Text('Cargos y condiciones'),
+                                      subtitle: const Text(
+                                          'Seguro, comisión y mora; se muestran al revisar'),
+                                      children: [
+                                        field('monthlyInsurance'),
+                                        field('openingFee'),
+                                        field('lateFee')
+                                      ]),
+                                ] else if (step == 1) ...[
+                                  field('income'),
+                                  field('expenses'),
+                                  field('debtPayments')
+                                ] else
+                                  review(),
+                              ])))),
+              if (error != null)
+                Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Semantics(
+                        liveRegion: true,
+                        child: Text(error!,
+                            style: TextStyle(
+                                color: Theme.of(context).colorScheme.error)))),
+              const SizedBox(height: 24),
+              FilledButton(
+                  onPressed: finished
+                      ? null
+                      : step < 2
+                          ? next
+                          : () => submit(widget.application == null),
+                  child: Text(step < 2
+                      ? 'Continuar'
+                      : widget.application == null
+                          ? 'Enviar solicitud'
+                          : 'Guardar corrección')),
+              if (step == 2 && widget.application == null)
+                TextButton(
+                    onPressed: finished ? null : () => submit(false),
+                    child: const Text('Guardar como borrador')),
+              if (step > 0)
+                TextButton(
+                    onPressed: () => setState(() => step--),
+                    child: const Text('Paso anterior')),
+            ])));
+  }
 }
 
 class AccountSecurityDialog extends StatefulWidget {

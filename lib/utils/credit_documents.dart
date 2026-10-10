@@ -2,17 +2,24 @@ import 'dart:convert';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:flutter/services.dart';
 import '../services/credit_service.dart';
+import '../models/credit_account.dart';
 import 'document_files.dart';
 
 class CreditDocuments {
   static Map<String, dynamic> report(
           CreditService service, Map<String, dynamic> app) =>
       {
-        'version': 1,
+        'version': 2,
         'exportedAt': DateTime.now().toIso8601String(),
         'application': app,
+        if (app['status'] == 'approved')
+          'financialStatus': service.lifecycle(app).name,
+        'creditAccount': service.account(app['id'] as String),
         'payments': service.payments(app['id'] as String),
-        if (app['status'] == 'approved') 'balances': service.balance(app),
+        if (app['status'] == 'approved' &&
+            [CreditLifecycle.active, CreditLifecycle.legacy]
+                .contains(service.lifecycle(app)))
+          'balances': service.balance(app),
       };
   static Future<String?> export(CreditService service, Map<String, dynamic> app,
       {required bool pdf}) async {
@@ -46,8 +53,15 @@ class CreditDocuments {
               pw.Text('Simulacion academica - ${app['id']}'),
               pw.Text(
                   'Solicitante: ${app['applicant']} | Estado: ${app['status']}'),
+              if (app['status'] == 'approved')
+                pw.Text('Estado financiero: ${service.lifecycle(app).label}'),
+              if (service.account(app['id'] as String)?['status'] == 'active')
+                pw.Text(
+                    'Desembolso registrado: ${service.account(app['id'] as String)!['disbursedAt']} | Referencia: ${service.account(app['id'] as String)!['disbursementReference']}'),
               pw.Text(
                   'Monto: ${terms['principal']} | Tasa nominal anual: ${terms['annualRate']}% | Meses: ${terms['months']} | Sistema: ${terms['method']}'),
+              pw.Text(
+                  'Seguro mensual: ${terms['monthlyInsurance']} | Comision inicial: ${terms['openingFee']} | Mora por cuota: ${terms['lateFee']}'),
               if (eval != null)
                 pw.Text(
                     'DTI: ${((eval['dti'] as num) * 100).toStringAsFixed(2)}% | Puntaje: ${eval['score']} | Reglas v${eval['rulesVersion']}'),

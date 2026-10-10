@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:hive/hive.dart';
 import 'totp_service.dart';
 import '../models/credit_engine.dart';
+import '../models/credit_account.dart';
 
 enum UserRole { client, analyst, compliance, manager }
 
@@ -38,16 +39,20 @@ class LocalDatabaseService {
 
   late Box _database;
   final _auth = StreamController<LocalUser?>.broadcast();
+  final _changes = StreamController<void>.broadcast();
+  Stream<void> get businessChanges => _changes.stream;
   LocalUser? _user;
   LocalUser? get currentUser {
-    if (_user == null) return null;
+    if (_user == null || !_database.isOpen) return null;
     final session = _database.get('session_v2');
-    if (session is! Map || !DateTime.parse(session['expires'] as String).isAfter(DateTime.now())) {
+    if (session is! Map ||
+        !DateTime.parse(session['expires'] as String).isAfter(DateTime.now())) {
       _user = null;
       scheduleMicrotask(() => _auth.add(null));
     }
     return _user;
   }
+
   Stream<LocalUser?> get authStateChanges => _auth.stream;
   Map<String, dynamic> get _users =>
       Map<String, dynamic>.from(_database.get('users_v2') as Map);
@@ -267,6 +272,7 @@ class LocalDatabaseService {
       event['hash'] = sha256.convert(utf8.encode(jsonEncode(event))).toString();
       state['audit'] = [...audit, event];
       await _database.put('business_v2', state);
+      _changes.add(null);
       return value;
     });
     _writes = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
@@ -276,14 +282,14 @@ class LocalDatabaseService {
   Map<String, dynamic> readSnapshot() {
     _requireSession();
     if (_user!.role != UserRole.manager) {
-      throw StateError('Solo gerencia puede consultar la cartera anterior.');
+      throw StateError('Solo administración puede consultar la cartera.');
     }
     return _snapshot();
   }
 
   Map<String, dynamic> readWorkflow() {
     _requireSession();
-    final state = _snapshot();
+    final state = _readBusinessView();
     final apps = rowsOf(state, 'applications')
         .where(
             (a) => _user!.role != UserRole.client || a['ownerId'] == _user!.id)
@@ -293,8 +299,27 @@ class LocalDatabaseService {
       'credit_payments': rowsOf(state, 'credit_payments')
           .where((p) => apps.any((a) => a['id'] == p['applicationId']))
           .toList(),
+      'credit_accounts': rowsOf(state, 'credit_accounts')
+          .where((r) => apps.any((a) => a['id'] == r['applicationId']))
+          .toList(),
       'scoring_rules': state['scoring_rules'] ?? {'version': 1, 'maxDti': 0.4}
     };
+  }
+
+  /// Screen reads do not deserialize the full historical audit on each frame.
+  Map<String, dynamic> _readBusinessView() {
+    final raw = _database.get('business_v2');
+    if (raw is! Map) return _snapshot()..remove('audit');
+    final business = Map<String, dynamic>.from(raw)..remove('audit');
+    return Map<String, dynamic>.from(jsonDecode(jsonEncode(business)) as Map);
+  }
+
+  Map<String, dynamic> readPortfolio() {
+    _requireSession();
+    if (_user!.role != UserRole.manager) {
+      throw StateError('Solo administración puede consultar la cartera.');
+    }
+    return _readBusinessView();
   }
 
   List<Map<String, dynamic>> auditLog() =>
@@ -354,11 +379,18 @@ class LocalDatabaseService {
 
   void _putRow(
       Map<String, dynamic> state, String table, Map<String, dynamic> row,
-      {bool replace = false}) {
+      {bool replace = false, bool validateCash = true}) {
     _validate(table, row, state);
     final rows = rowsOf(state, table);
     final index = rows.indexWhere((e) => e['id'] == row['id']);
     if (index >= 0 && !replace) throw StateError('El registro ya existe.');
+    if (table == 'loans' && validateCash) {
+      final increase = (row['initial_amount'] as num).toDouble() -
+          (index < 0 ? 0 : (rows[index]['initial_amount'] as num).toDouble());
+      if (increase > PortfolioLedger.availableCash(state) + .001) {
+        throw StateError('Capital insuficiente.');
+      }
+    }
     final data = {
       ...row,
       'user_id': _user!.id,
@@ -437,13 +469,14 @@ class LocalDatabaseService {
           throw StateError(
               'El cliente tiene préstamos. Conserva su historial.');
         }
+        if (rowsOf(s, 'credit_accounts').any((a) => a['customerId'] == id)) {
+          throw StateError(
+              'El cliente tiene un crédito vinculado. Conserva su historial.');
+        }
         s['customers'] = rowsOf(s, 'customers')
           ..removeWhere((c) => c['id'].toString() == id);
       });
-  Future<void> insertLoan(Map<String, dynamic> data) async {
-    throw StateError(
-        'Los nuevos préstamos requieren una solicitud aprobada en el módulo Créditos. La cartera anterior solo permite gestionar préstamos existentes.');
-  }
+  Future<void> insertLoan(Map<String, dynamic> data) => _insert('loans', data);
 
   Future<void> updateLoan(String id, Map<String, dynamic> data) =>
       _update('loans', id, data);
@@ -506,6 +539,10 @@ class LocalDatabaseService {
         (s['settings'] as Map)[key] = value;
       });
   Future<void> clearAllUserData() => transaction('reiniciar_datos', (s) {
+        if (rowsOf(s, 'credit_accounts').isNotEmpty) {
+          throw StateError(
+              'Hay créditos vinculados. Conserva sus clientes y exporta un respaldo completo.');
+        }
         for (final table in [
           'customers',
           'loans',
@@ -556,7 +593,7 @@ class LocalDatabaseService {
             }
             _validate(table, row, s);
             if (!rowsOf(s, table).any((e) => e['id'] == row['id'])) {
-              _putRow(s, table, row);
+              _putRow(s, table, row, validateCash: false);
             }
           }
         }
@@ -574,13 +611,13 @@ class LocalDatabaseService {
         }
       });
   Map<String, dynamic> exportBusinessBackup() => {
-        'version': 2,
+        'version': 3,
         'exportedAt': DateTime.now().toIso8601String(),
         'business': readSnapshot(),
       };
   Future<void> restoreBusinessBackup(Map<String, dynamic> backup) =>
       transaction('restaurar_respaldo', (s) {
-        if (backup['version'] != 2 || backup['business'] is! Map) {
+        if (![2, 3].contains(backup['version']) || backup['business'] is! Map) {
           throw ArgumentError('Respaldo completo incompatible.');
         }
         final incoming = Map<String, dynamic>.from(
@@ -594,6 +631,7 @@ class LocalDatabaseService {
           if (incoming[table] is! List) throw ArgumentError('Falta $table.');
           final seen = <String>{};
           for (final row in rowsOf(incoming, table)) {
+            // Historical imports are validated without treating stored loans as new deliveries.
             _validate(table, row, incoming);
             if (!seen.add(row['id'].toString())) {
               throw ArgumentError('Identificador duplicado.');
@@ -630,7 +668,7 @@ class LocalDatabaseService {
           ].contains(a['status'])) {
             throw ArgumentError('Estado inválido.');
           }
-          if (a['status'] == 'approved') {
+          if (a['status'] == 'approved' && a['creditLifecycle'] == null) {
             final expected = CreditEngine.schedule(
                     terms, DateTime.parse(a['approvedAt'] as String))
                 .map((r) => r.toMap())
@@ -646,8 +684,110 @@ class LocalDatabaseService {
                 (terms.lateFee * 100).round(),
                 DateTime.now());
           }
+          if (a['creditLifecycle'] != null &&
+              (a['creditLifecycle'] != 'awaitingFormalization' ||
+                  a['status'] != 'approved')) {
+            throw ArgumentError('Ciclo financiero inválido.');
+          }
+          if (a['creditLifecycle'] == 'awaitingFormalization') {
+            final approved = DateTime.parse(a['approvedAt'] as String);
+            if (approved.isAfter(DateTime.now()) ||
+                jsonEncode(a['quotedSchedule']) !=
+                    jsonEncode(CreditEngine.schedule(terms, approved)
+                        .map((r) => r.toMap())
+                        .toList())) {
+              throw ArgumentError('Cotización aprobada alterada.');
+            }
+          }
+        }
+        final accounts = rowsOf(incoming, 'credit_accounts');
+        final accountIds = <String>{};
+        final linkedApplications = <String>{};
+        final disbursementReferences = <String>{};
+        for (final record in accounts) {
+          final app =
+              apps.where((a) => a['id'] == record['applicationId']).firstOrNull;
+          if (record['id'] is! String ||
+              !accountIds.add(record['id'] as String) ||
+              !linkedApplications.add(record['applicationId'] as String) ||
+              app == null ||
+              app['status'] != 'approved' ||
+              app['ownerId'] != record['ownerId'] ||
+              !rowsOf(incoming, 'customers')
+                  .any((c) => c['id'].toString() == record['customerId']) ||
+              !['formalized', 'active'].contains(record['status']) ||
+              record['termsVersion'] != 1 ||
+              record['legacy'] is! bool ||
+              record['acceptanceReference'] is! String ||
+              (record['acceptanceReference'] as String).trim().length < 5) {
+            throw ArgumentError('Crédito vinculado inválido.');
+          }
+          final terms = CreditTerms.fromMap(
+              Map<String, dynamic>.from(record['terms'] as Map));
+          if (jsonEncode(terms.toMap()) !=
+              jsonEncode(CreditTerms.fromMap(
+                      Map<String, dynamic>.from(app['terms'] as Map))
+                  .toMap())) {
+            throw ArgumentError('Condiciones del crédito alteradas.');
+          }
+          final formalized = DateTime.parse(record['formalizedAt'] as String);
+          if (formalized.isAfter(DateTime.now()) ||
+              (record['legacy'] == true) != (app['creditLifecycle'] == null)) {
+            throw ArgumentError('Formalización o conciliación inválida.');
+          }
+          if (record['cashPrincipalCents'] is! int ||
+              record['cashPaymentBaselineCents'] is! int ||
+              (record['cashPaymentBaselineCents'] as int) < 0) {
+            throw ArgumentError('Conciliación de caja inválida.');
+          }
+          if (record['status'] == 'active') {
+            final disbursed = DateTime.parse(record['disbursedAt'] as String);
+            if (disbursed.isAfter(DateTime.now()) ||
+                (record['legacy'] != true &&
+                    disbursed.isBefore(DateTime(
+                        formalized.year, formalized.month, formalized.day))) ||
+                record['disbursementReference'] is! String ||
+                (record['disbursementReference'] as String).trim().length < 3 ||
+                !disbursementReferences
+                    .add(record['disbursementReference'] as String)) {
+              throw ArgumentError('Desembolso inválido.');
+            }
+            final expected = record['legacy'] == true
+                ? app['schedule']
+                : CreditEngine.schedule(terms, disbursed)
+                    .map((r) => r.toMap())
+                    .toList();
+            if (jsonEncode(expected) != jsonEncode(record['schedule'])) {
+              throw ArgumentError('Plan activo alterado.');
+            }
+            final openingIncluded = record['legacy'] == true &&
+                record['cashAlreadyIncluded'] == true;
+            final grossHistoricalPayments = rowsOf(incoming, 'credit_payments')
+                .where((p) =>
+                    p['applicationId'] == app['id'] &&
+                    !DateTime.parse(p['date'] as String).isAfter(formalized))
+                .fold<int>(0, (sum, p) => sum + (p['amountCents'] as int));
+            if ((record['cashPaymentBaselineCents'] as int) >
+                    grossHistoricalPayments ||
+                (record['legacy'] == true &&
+                    record['cashAlreadyIncluded'] is! bool)) {
+              throw ArgumentError('Saldo de apertura inválido.');
+            }
+            if (record['cashPrincipalCents'] !=
+                    (openingIncluded ? 0 : (terms.principal * 100).round()) ||
+                (!openingIncluded && record['cashPaymentBaselineCents'] != 0)) {
+              throw ArgumentError('Movimiento de desembolso alterado.');
+            }
+            PortfolioLedger.accountBalance(incoming, record);
+          } else if (record['legacy'] == true ||
+              rowsOf(record, 'schedule').isNotEmpty ||
+              record['cashPrincipalCents'] != 0 ||
+              record['cashPaymentBaselineCents'] != 0) {
+            throw ArgumentError('Crédito sin desembolso inconsistente.');
+          }
         }
         final paymentIds = <String>{};
+        final paymentReferences = <String>{};
         for (final p in rowsOf(incoming, 'credit_payments')) {
           if (!ids.contains(p['applicationId']) ||
               !paymentIds.add(p['id'] as String) ||
@@ -655,6 +795,40 @@ class LocalDatabaseService {
               (p['amountCents'] as int) <= 0 ||
               DateTime.parse(p['date'] as String).isAfter(DateTime.now())) {
             throw ArgumentError('Pago inválido en el respaldo.');
+          }
+          final app = apps.firstWhere((a) => a['id'] == p['applicationId']);
+          final record = accounts
+              .where((a) => a['applicationId'] == p['applicationId'])
+              .firstOrNull;
+          if (app['status'] != 'approved' ||
+              p['reference'] is! String ||
+              (p['reference'] as String).trim().length < 3 ||
+              (p['voided'] != null && p['voided'] is! bool) ||
+              (record != null &&
+                  record['status'] == 'active' &&
+                  record['legacy'] != true &&
+                  DateTime.parse(p['date'] as String).isBefore(
+                      DateTime.parse(record['disbursedAt'] as String))) ||
+              (app['creditLifecycle'] != null &&
+                  record?['status'] != 'active') ||
+              (p['accountId'] != null && p['accountId'] != record?['id']) ||
+              (p['voided'] != true &&
+                  !paymentReferences
+                      .add('${p['applicationId']}:${p['reference']}'))) {
+            throw ArgumentError(
+                'Pago sin crédito activo o referencia duplicada.');
+          }
+        }
+        if (incoming['scoring_rules'] != null) {
+          final rules = incoming['scoring_rules'];
+          if (rules is! Map ||
+              rules['version'] is! int ||
+              (rules['version'] as int) < 1 ||
+              rules['maxDti'] is! num ||
+              !(rules['maxDti'] as num).isFinite ||
+              (rules['maxDti'] as num) <= 0 ||
+              (rules['maxDti'] as num) > 1) {
+            throw ArgumentError('Reglas de evaluación inválidas.');
           }
         }
         for (final key in [
@@ -665,6 +839,7 @@ class LocalDatabaseService {
           'settings',
           'applications',
           'credit_payments',
+          'credit_accounts',
           'scoring_rules'
         ]) {
           if (incoming.containsKey(key)) {

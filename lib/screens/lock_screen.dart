@@ -1,3 +1,5 @@
+import '../utils/app_theme.dart';
+import '../widgets/app_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/local_fonts.dart';
@@ -134,124 +136,126 @@ class _LockScreenState extends State<LockScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [theme.colorScheme.primary, theme.colorScheme.secondary],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.asset(
-                    'assets/icons/contador_engine_logo.png',
-                    width: 72,
-                    height: 72,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Contador Engine',
-                    style: AppFonts.inter(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Ingresá tu PIN para continuar',
-                    style: AppFonts.inter(
-                        color: Colors.white.withAlpha(204), fontSize: 13),
-                  ),
-                  const SizedBox(height: 32),
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: Column(
-                      children: [
-                        TextField(
-                          controller: _pinController,
-                          autofocus: !_checkingBiometrics,
-                          obscureText: true,
-                          textAlign: TextAlign.center,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                            LengthLimitingTextInputFormatter(6),
-                          ],
-                          style: AppFonts.inter(fontSize: 24, letterSpacing: 8),
-                          decoration: InputDecoration(
-                            counterText: '',
-                            hintText: '••••',
-                            errorText: _error,
-                            border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16)),
-                          ),
-                          onChanged: (_) {
-                            if (_error != null) setState(() => _error = null);
-                          },
-                          onSubmitted: (_) => _verifyPin(),
+      body: PageFrame(
+          maxWidth: 480,
+          child: Container(
+            color: AppTheme.background,
+            child: SafeArea(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Image.asset(
+                        'assets/icons/contador_engine_icon_source.png',
+                        width: 72,
+                        height: 72,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Contador Engine',
+                        style: AppFonts.inter(
+                            color: AppTheme.ink,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Ingresá tu PIN para continuar',
+                        style:
+                            AppFonts.inter(color: AppTheme.muted, fontSize: 13),
+                      ),
+                      const SizedBox(height: 32),
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
                         ),
-                        const SizedBox(height: 16),
-                        TextButton(
-                            onPressed: () async {
-                              final recovered = await showDialog<bool>(
-                                  context: context,
-                                  builder: (_) => const _PinRecoveryDialog());
-                              if (recovered == true && mounted) {
-                                widget.onUnlocked();
-                              }
-                            },
-                            child: const Text(
-                                'Olvidé el PIN · recuperar con mi cuenta')),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: _verifyPin,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: theme.colorScheme.primary,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16)),
-                            ),
-                            child: const Text('Desbloquear'),
-                          ),
-                        ),
-                        FutureBuilder<bool>(
-                          future: AppLockService().useBiometrics,
-                          builder: (context, snapshot) {
-                            if (snapshot.data != true) {
-                              return const SizedBox.shrink();
-                            }
-                            return Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: TextButton.icon(
-                                onPressed:
-                                    _checkingBiometrics ? null : _tryBiometrics,
-                                icon: const Icon(Icons.fingerprint_rounded),
-                                label: const Text('Usar huella / Face ID'),
+                        child: Column(
+                          children: [
+                            TextField(
+                              controller: _pinController,
+                              autofocus: !_checkingBiometrics,
+                              obscureText: true,
+                              textAlign: TextAlign.center,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(6),
+                              ],
+                              style: AppFonts.inter(
+                                  fontSize: 24, letterSpacing: 8),
+                              decoration: InputDecoration(
+                                counterText: '',
+                                hintText: '••••',
+                                errorText: _error,
+                                border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16)),
                               ),
-                            );
-                          },
+                              onChanged: (_) {
+                                if (_error != null) {
+                                  setState(() => _error = null);
+                                }
+                              },
+                              onSubmitted: (_) => _verifyPin(),
+                            ),
+                            const SizedBox(height: 16),
+                            TextButton(
+                                onPressed: () async {
+                                  final recovered = await showDialog<bool>(
+                                      context: context,
+                                      builder: (_) =>
+                                          const _PinRecoveryDialog());
+                                  if (recovered == true && mounted) {
+                                    widget.onUnlocked();
+                                  }
+                                },
+                                child: const Text(
+                                    'Olvidé el PIN · recuperar con mi cuenta')),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: _verifyPin,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: theme.colorScheme.primary,
+                                  foregroundColor: Colors.white,
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 14),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16)),
+                                ),
+                                child: const Text('Desbloquear'),
+                              ),
+                            ),
+                            FutureBuilder<bool>(
+                              future: AppLockService().useBiometrics,
+                              builder: (context, snapshot) {
+                                if (snapshot.data != true) {
+                                  return const SizedBox.shrink();
+                                }
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: TextButton.icon(
+                                    onPressed: _checkingBiometrics
+                                        ? null
+                                        : _tryBiometrics,
+                                    icon: const Icon(Icons.fingerprint_rounded),
+                                    label: const Text('Usar huella / Face ID'),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
-          ),
-        ),
-      ),
+          )),
     );
   }
 }

@@ -6,6 +6,7 @@ import 'local_fonts.dart';
 import 'package:provider/provider.dart';
 import '../models/backup_preview.dart';
 import '../providers/debt_provider.dart';
+import '../services/local_database_service.dart';
 import 'sensitive_action_guard.dart';
 import 'shared_styles.dart';
 
@@ -37,6 +38,42 @@ Future<void> showImportBackupFlow(BuildContext context) async {
 
   if (!context.mounted) return;
   final provider = Provider.of<DebtProvider>(context, listen: false);
+
+  if ([2, 3].contains(data['version']) && data['business'] is Map) {
+    final business = data['business'] as Map;
+    final confirmed = await showBlurDialog<bool>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+                title: const Text('Restaurar negocio completo'),
+                content: Text(
+                    'Contiene ${((business['customers'] as List?) ?? []).length} clientes, '
+                    '${((business['applications'] as List?) ?? []).length} solicitudes y '
+                    '${((business['credit_accounts'] as List?) ?? []).length} créditos vinculados. '
+                    'Reemplazará los datos del negocio de este equipo. Las cuentas y la bitácora se conservan.'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(dialog, false),
+                      child: const Text('Cancelar')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(dialog, true),
+                      child: const Text('Restaurar'))
+                ]));
+    if (confirmed != true || !context.mounted) return;
+    await requireSensitiveActionUnlock(context,
+        reason: 'Vas a restaurar el respaldo completo del negocio.',
+        onUnlocked: () async {
+      try {
+        await LocalDatabaseService().restoreBusinessBackup(data);
+        await provider.fetchAll();
+        messenger.showSnackBar(
+            const SnackBar(content: Text('Respaldo completo restaurado.')));
+      } catch (e) {
+        messenger
+            .showSnackBar(SnackBar(content: Text('No se pudo restaurar: $e')));
+      }
+    });
+    return;
+  }
 
   if (!provider.isValidBackupData(data)) {
     messenger.showSnackBar(

@@ -1,3 +1,4 @@
+import '../widgets/app_ui.dart';
 import 'package:flutter/material.dart';
 import '../utils/local_fonts.dart';
 import 'package:intl/intl.dart';
@@ -6,6 +7,8 @@ import '../models/insights.dart';
 import '../providers/debt_provider.dart';
 import '../utils/phone_helper.dart';
 import 'customer_detail_screen.dart';
+import 'credit_portal_screen.dart';
+import '../utils/app_theme.dart';
 
 /// Predicción de cobros del día: préstamos que, según su frecuencia y la
 /// fecha del último cobro (o de inicio si aún no tiene ninguno), toca
@@ -39,59 +42,11 @@ class _TodaysCollectionsScreenState extends State<TodaysCollectionsScreen> {
     final currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FD),
-      body: Column(
+      backgroundColor: AppTheme.background,
+      body: PageFrame(
+          child: Column(
         children: [
-          Container(
-            padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top + 12,
-              bottom: 20,
-              left: 12,
-              right: 28,
-            ),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  theme.colorScheme.primary,
-                  theme.colorScheme.secondary
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(30),
-                bottomRight: Radius.circular(30),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                          color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                    Text(
-                      'Cobros de hoy',
-                      style: AppFonts.inter(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.5),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Clientes que probablemente toca visitar hoy.',
-                  style: AppFonts.inter(
-                      color: Colors.white.withAlpha(204), fontSize: 12),
-                ),
-              ],
-            ),
-          ),
+          const PageHeading(title: 'Cobros de hoy', back: true),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
             child: SingleChildScrollView(
@@ -137,8 +92,11 @@ class _TodaysCollectionsScreenState extends State<TodaysCollectionsScreen> {
                 final items = provider.todaysCollections
                     .where((i) => _filter == null || i.status == _filter)
                     .toList();
+                final credits = provider.creditCollections
+                    .where((i) => _filter == null || i['status'] == _filter)
+                    .toList();
 
-                if (items.isEmpty) {
+                if (items.isEmpty && credits.isEmpty) {
                   return Center(
                     child: Padding(
                       padding: const EdgeInsets.all(32),
@@ -162,11 +120,46 @@ class _TodaysCollectionsScreenState extends State<TodaysCollectionsScreen> {
 
                 return ListView.separated(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                  itemCount: items.length,
+                  itemCount: items.length + credits.length,
                   separatorBuilder: (context, index) =>
                       const SizedBox(height: 10),
                   itemBuilder: (context, index) {
-                    final item = items[index];
+                    if (index < credits.length) {
+                      final item = credits[index];
+                      final account = item['account'] as Map<String, dynamic>;
+                      final customer =
+                          provider.getCustomerById(account['customerId']);
+                      return TouchSurface(
+                          onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute<void>(
+                                  builder: (_) => CreditDetailScreen(
+                                      id: account['applicationId'] as String))),
+                          child: Padding(
+                              padding: const EdgeInsets.all(18),
+                              child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(customer?.name ?? 'Cliente',
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w700)),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                        'Crédito amortizado · ${(item['status'] as CollectionStatus).label}',
+                                        style: TextStyle(
+                                            color: _statusColor(item['status']
+                                                as CollectionStatus))),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                        'Por cobrar: ${currency.format((item['suggestedCents'] as int) / 100)}'),
+                                    Text(
+                                        'Vence ${DateFormat('dd/MM/yyyy').format(item['due'] as DateTime)}',
+                                        style: const TextStyle(
+                                            color: AppTheme.muted,
+                                            fontSize: 12)),
+                                  ])));
+                    }
+                    final item = items[index - credits.length];
                     final color = _statusColor(item.status);
 
                     return Material(
@@ -185,12 +178,7 @@ class _TodaysCollectionsScreenState extends State<TodaysCollectionsScreen> {
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                  color: Colors.black.withAlpha(8),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 6)),
-                            ],
+                            boxShadow: const [],
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -309,7 +297,7 @@ class _TodaysCollectionsScreenState extends State<TodaysCollectionsScreen> {
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 }

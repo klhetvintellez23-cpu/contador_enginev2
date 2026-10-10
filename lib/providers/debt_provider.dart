@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -10,11 +11,13 @@ import '../models/payment.dart';
 import '../models/capital_entry.dart';
 import '../models/insights.dart';
 import '../models/backup_preview.dart';
+import '../models/credit_account.dart';
 import '../services/local_database_service.dart';
 
 import '../services/local_cache_service.dart';
 import '../services/notification_service.dart';
 import '../utils/export_helper.dart';
+import '../utils/document_files.dart';
 
 class DebtProvider with ChangeNotifier {
   List<Customer> _customers = [];
@@ -62,11 +65,93 @@ class DebtProvider with ChangeNotifier {
   final Uuid _uuid = const Uuid();
   bool get isOffline => false;
   int get pendingCount => _cache.pendingCount;
-  bool _isFetching = false;
+  Future<void>? _fetchFuture;
+  bool _refreshAgain = false;
+  bool _disposed = false;
+  StreamSubscription<void>? _businessSubscription;
 
   DebtProvider() {
     _businessLogoPath = _cache.readBusinessLogoPath();
+    _businessSubscription = _database.businessChanges.listen((_) {
+      if (_database.currentUser?.role == UserRole.manager) {
+        unawaited(fetchAll());
+      }
+    });
   }
+  @override
+  void dispose() {
+    _disposed = true;
+    _businessSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
+  /// Read-only projection for reports; source records retain their own engine.
+  List<Payment> get portfolioPayments {
+    if (_database.currentUser?.role != UserRole.manager) return _allPayments;
+    final snapshot = _database.readPortfolio();
+    final ids = activeCreditAccounts.map((a) => a['applicationId']).toSet();
+    return [
+      ..._allPayments,
+      ...PortfolioLedger.rows(snapshot, 'credit_payments')
+          .where((p) => ids.contains(p['applicationId']) && p['voided'] != true)
+          .map((p) => Payment(
+              id: p['id'],
+              loanId: p['accountId'],
+              amount: (p['amountCents'] as int) / 100,
+              date: DateTime.parse(p['date'] as String)))
+    ];
+  }
+
+  int get settledCreditCount => activeCreditAccounts
+      .where((a) => PortfolioLedger.accountBalance(_database.readPortfolio(), a)
+          .every((r) => r['remainingCents'] == 0))
+      .length;
+
+  List<Map<String, dynamic>> get creditCollections {
+    if (_database.currentUser?.role != UserRole.manager) return [];
+    final snapshot = _database.readPortfolio();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final result = <Map<String, dynamic>>[];
+    for (final account in PortfolioLedger.rows(snapshot, 'credit_accounts')
+        .where((a) => a['status'] == 'active')) {
+      final balance = PortfolioLedger.accountBalance(snapshot, account);
+      final pending =
+          balance.where((r) => (r['remainingCents'] as int) > 0).toList();
+      if (pending.isEmpty) continue;
+      final due = DateTime.parse(pending.first['due'] as String);
+      final days = due.difference(today).inDays;
+      if (days > 1) continue;
+      result.add({
+        'account': account,
+        'due': due,
+        'status': days < 0
+            ? CollectionStatus.overdue
+            : days == 0
+                ? CollectionStatus.dueToday
+                : CollectionStatus.upcoming,
+        'suggestedCents': pending
+            .where((r) => !DateTime.parse(r['due'] as String)
+                .isAfter(due.isBefore(today) ? today : due))
+            .fold<int>(0, (s, r) => s + (r['remainingCents'] as int)),
+      });
+    }
+    result
+        .sort((a, b) => (a['due'] as DateTime).compareTo(b['due'] as DateTime));
+    return result;
+  }
+
+  List<Map<String, dynamic>> get activeCreditAccounts =>
+      _database.currentUser?.role == UserRole.manager
+          ? PortfolioLedger.rows(_database.readPortfolio(), 'credit_accounts')
+              .where((r) => r['status'] == 'active')
+              .toList()
+          : [];
 
   LoanTransaction? getLoanById(dynamic id) {
     try {
@@ -78,7 +163,7 @@ class DebtProvider with ChangeNotifier {
 
   Customer? getCustomerById(dynamic id) {
     try {
-      return _customers.firstWhere((c) => c.id == id);
+      return _customers.firstWhere((c) => c.id.toString() == id.toString());
     } catch (_) {
       return null;
     }
@@ -377,12 +462,14 @@ class DebtProvider with ChangeNotifier {
 
     final paymentsToday =
         _allPayments.where((p) => !p.date.isBefore(todayStart)).toList();
-    final totalCollectedToday = paymentsToday.fold(0.0, (s, p) => s + p.amount);
+    var totalCollectedToday = paymentsToday.fold(0.0, (s, p) => s + p.amount);
+    var paymentCount = paymentsToday.length;
 
     final loansToday =
         _allLoans.where((l) => !l.startDate.isBefore(todayStart)).toList();
-    final capitalDeliveredToday =
+    var capitalDeliveredToday =
         loansToday.fold(0.0, (s, l) => s + l.initialAmount);
+    var newLoans = loansToday.length;
 
     final overdueCustomerIds = overdueLoans.map((l) => l.customerId).toSet();
 
@@ -401,6 +488,40 @@ class DebtProvider with ChangeNotifier {
       }
     }
 
+    if (_database.currentUser?.role == UserRole.manager) {
+      final snapshot = _database.readPortfolio();
+      for (final account in activeCreditAccounts) {
+        if (account['legacy'] != true &&
+            !DateTime.parse(account['disbursedAt'] as String)
+                .isBefore(todayStart)) {
+          capitalDeliveredToday += (account['cashPrincipalCents'] as int) / 100;
+          newLoans++;
+        }
+        final payments = PortfolioLedger.rows(snapshot, 'credit_payments')
+            .where((p) =>
+                p['applicationId'] == account['applicationId'] &&
+                p['voided'] != true &&
+                !DateTime.parse(p['date'] as String).isBefore(todayStart))
+            .toList();
+        paymentCount += payments.length;
+        totalCollectedToday +=
+            payments.fold<int>(0, (sum, p) => sum + (p['amountCents'] as int)) /
+                100;
+        final balance = PortfolioLedger.accountBalance(snapshot, account);
+        final previous = PortfolioLedger.accountBalance(snapshot, account,
+            asOf: todayStart.subtract(const Duration(microseconds: 1)));
+        int interest(List<Map<String, dynamic>> rows) => rows.fold<int>(
+            0, (sum, r) => sum + (r['interestPaidCents'] as int));
+        interestCollectedToday +=
+            (interest(balance) - interest(previous)) / 100;
+        if (balance.any((r) =>
+            (r['remainingCents'] as int) > 0 &&
+            DateTime.parse(r['due'] as String).isBefore(todayStart))) {
+          overdueCustomerIds.add(account['customerId']);
+        }
+      }
+    }
+
     final dateStr = DateFormat('dd/MM/yyyy').format(now);
     final reportBuffer = StringBuffer()
       ..writeln('📊 Cierre del día — $dateStr');
@@ -410,16 +531,16 @@ class DebtProvider with ChangeNotifier {
     reportBuffer
       ..writeln('')
       ..writeln(
-          'Cobrado hoy: ${_fmt(totalCollectedToday)} (${paymentsToday.length} pago(s))')
-      ..writeln('Préstamos nuevos: ${loansToday.length}')
+          'Cobrado hoy: ${_fmt(totalCollectedToday)} ($paymentCount pago(s))')
+      ..writeln('Préstamos nuevos: $newLoans')
       ..writeln('Capital entregado: ${_fmt(capitalDeliveredToday)}')
       ..writeln('Clientes atrasados: ${overdueCustomerIds.length}')
       ..writeln('Interés/ganancia cobrada: ${_fmt(interestCollectedToday)}');
 
     return DailyClosingSummary(
       totalCollectedToday: totalCollectedToday,
-      paymentsCountToday: paymentsToday.length,
-      newLoansToday: loansToday.length,
+      paymentsCountToday: paymentCount,
+      newLoansToday: newLoans,
       capitalDeliveredToday: capitalDeliveredToday,
       overdueCustomersCount: overdueCustomerIds.length,
       estimatedInterestToday: interestCollectedToday,
@@ -483,11 +604,34 @@ class DebtProvider with ChangeNotifier {
 
   // ==================== Carga de datos ====================
 
-  Future<void> fetchAll() async {
+  Future<void> fetchAll() {
+    if (_disposed) return Future.value();
+    if (_fetchFuture != null) {
+      _refreshAgain = true;
+      return _fetchFuture!;
+    }
+    final completion = Completer<void>();
+    _fetchFuture = completion.future;
+    () async {
+      try {
+        do {
+          _refreshAgain = false;
+          await _fetchAllOnce();
+        } while (_refreshAgain && !_disposed);
+        completion.complete();
+      } catch (e, stack) {
+        completion.completeError(e, stack);
+      } finally {
+        _fetchFuture = null;
+        _isLoading = false;
+      }
+    }();
+    return completion.future;
+  }
+
+  Future<void> _fetchAllOnce() async {
     if (_database.currentUser?.role != UserRole.manager) return;
     _businessLogoPath = _cache.readBusinessLogoPath();
-    if (_isFetching) return; // Evitar recargas simultáneas
-    _isFetching = true;
     _isLoading = true;
     notifyListeners();
 
@@ -560,6 +704,7 @@ class DebtProvider with ChangeNotifier {
       _businessName ??= _cache.readBusinessNameFallback();
     }
 
+    if (_disposed || _database.currentUser?.role != UserRole.manager) return;
     _recalculateMetrics();
 
     _currentOffset = 0;
@@ -579,12 +724,11 @@ class DebtProvider with ChangeNotifier {
     }
 
     _isLoading = false;
-    _isFetching = false;
     notifyListeners();
 
     if (_cache.dailyReminderEnabled) {
-      unawaited(NotificationService()
-          .scheduleDailyCollectionsReminder(todaysCollections.length));
+      unawaited(NotificationService().scheduleDailyCollectionsReminder(
+          todaysCollections.length + creditCollections.length));
     } else {
       unawaited(NotificationService().cancelDailyReminder());
     }
@@ -1056,7 +1200,7 @@ class DebtProvider with ChangeNotifier {
   }
 
   double _sumPaymentsSince(DateTime since) {
-    return _allPayments
+    return portfolioPayments
         .where((p) => !p.date.isBefore(since))
         .fold(0.0, (s, p) => s + p.amount);
   }
@@ -1085,6 +1229,7 @@ class DebtProvider with ChangeNotifier {
       _allPayments,
       _capitalHistory,
       _initialCapital,
+      portfolioState: _database.readPortfolio(),
     );
   }
 
@@ -1095,18 +1240,13 @@ class DebtProvider with ChangeNotifier {
       _allPayments,
       _initialCapital,
       _businessName,
+      portfolioState: _database.readPortfolio(),
     );
   }
 
   Future<String?> exportBackup() async {
-    return await ExportHelper.exportBackupToJSON(
-      _customers,
-      _allLoans,
-      _allPayments,
-      _capitalHistory,
-      _initialCapital,
-      _businessName,
-    );
+    return DocumentFiles.save('ContadorEngine_respaldo_v3.json',
+        utf8.encode(jsonEncode(_database.exportBusinessBackup())));
   }
 
   // ==================== Importar respaldo ====================
@@ -1236,5 +1376,36 @@ class DebtProvider with ChangeNotifier {
     // el capital recuperado.
     _realizedProfit = paidInterest;
     _moneyInHand = _initialCapital - activeCapital + totalCollected;
+    if (_database.currentUser?.role == UserRole.manager) {
+      final snapshot = _database.readPortfolio();
+      _moneyInHand += PortfolioLedger.creditCashImpact(snapshot) / 100;
+      for (final account in activeCreditAccounts) {
+        final balance = PortfolioLedger.accountBalance(snapshot, account);
+        _activeCapital += balance.fold<int>(
+                0,
+                (s, r) =>
+                    s +
+                    (r['principalCents'] as int) -
+                    (r['principalPaidCents'] as int)) /
+            100;
+        _totalReceivable +=
+            balance.fold<int>(0, (s, r) => s + (r['remainingCents'] as int)) /
+                100;
+        _recoveredCapital += balance.fold<int>(
+                0, (s, r) => s + (r['principalPaidCents'] as int)) /
+            100;
+        _realizedProfit += balance.fold<int>(
+                0, (s, r) => s + (r['interestPaidCents'] as int)) /
+            100;
+        _projectedProfit += balance
+                .where((r) =>
+                    !DateTime.parse(r['due'] as String).isAfter(DateTime.now()))
+                .fold<int>(0, (s, r) => s + (r['interestCents'] as int)) /
+            100;
+        _totalCollected += PortfolioLedger.activePayments(
+                snapshot, account['applicationId'] as String) /
+            100;
+      }
+    }
   }
 }

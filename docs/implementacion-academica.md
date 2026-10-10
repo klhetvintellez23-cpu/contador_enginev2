@@ -1,5 +1,10 @@
 # Implementación académica y verificación
 
+> Actualización: se restableció el panel original como inicio de administración
+> y se habilitó nuevamente la creación directa de préstamos en la cartera.
+> Las referencias siguientes al bloqueo de préstamos o a un portal principal
+> describen la entrega académica anterior y ya no son el comportamiento de inicio.
+
 Esta entrega evoluciona el diagnóstico de `revision-app-vs-presentacion.md`. Ese documento describe el estado anterior y se conserva como antecedente, no como inventario actualizado de errores.
 
 ## Bloques implementados y comprobados en orden

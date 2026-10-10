@@ -1,5 +1,6 @@
 import 'document_files.dart';
 import 'dart:convert';
+import 'package:flutter/services.dart';
 
 import 'package:intl/intl.dart';
 
@@ -10,6 +11,7 @@ import '../models/transaction.dart';
 import '../models/loan_calculator.dart';
 import '../models/payment.dart';
 import '../models/capital_entry.dart';
+import '../models/credit_account.dart';
 
 class ExportHelper {
   static Future<String?> exportDebtsToCSV(
@@ -17,8 +19,9 @@ class ExportHelper {
     List<LoanTransaction> allLoans,
     List<Payment> allPayments,
     List<CapitalEntry> capitalHistory,
-    double initialCapital,
-  ) async {
+    double initialCapital, {
+    Map<String, dynamic>? portfolioState,
+  }) async {
     try {
       final StringBuffer csv = StringBuffer();
 
@@ -75,12 +78,56 @@ class ExportHelper {
         ));
       }
 
+      if (portfolioState != null) {
+        for (final account
+            in PortfolioLedger.rows(portfolioState, 'credit_accounts')
+                .where((a) => a['status'] == 'active')) {
+          final name = customers
+                  .where((c) => c.id.toString() == account['customerId'])
+                  .firstOrNull
+                  ?.name ??
+              'Cliente';
+          movements.add(_Movement(
+              date: DateTime.parse(account['disbursedAt'] as String),
+              description:
+                  'Crédito amortizado: ${account['disbursementReference']}',
+              client: name,
+              income: 0,
+              expense: (account['cashPrincipalCents'] as int) / 100));
+          final baseline = (account['cashPaymentBaselineCents'] as int) / 100;
+          if (baseline > 0) {
+            movements.add(_Movement(
+                date: DateTime.parse(account['formalizedAt'] as String),
+                description:
+                    'Conciliación: cobros anteriores ya incluidos en caja',
+                client: name,
+                income: 0,
+                expense: baseline));
+          }
+          for (final p
+              in PortfolioLedger.rows(portfolioState, 'credit_payments').where(
+                  (p) =>
+                      p['applicationId'] == account['applicationId'] &&
+                      p['voided'] != true)) {
+            movements.add(_Movement(
+                date: DateTime.parse(p['date'] as String),
+                description: 'Cobro crédito amortizado: ${p['reference']}',
+                client: name,
+                income: (p['amountCents'] as int) / 100,
+                expense: 0));
+          }
+        }
+      }
+
       // Ordenar por fecha cronológica
       movements.sort((a, b) => a.date.compareTo(b.date));
 
       // Escribir fila de Saldo Inicial (si no hay movimientos previos o como punto de partida)
-      double runningBalance =
-          0; // El capital history ya debería reflejar la entrada inicial
+      double runningBalance = capitalHistory.isEmpty ? initialCapital : 0;
+      if (capitalHistory.isEmpty) {
+        csv.writeln(
+            ';;Capital inicial registrado;${initialCapital.toStringAsFixed(2)};;${initialCapital.toStringAsFixed(2)}');
+      }
 
       for (var m in movements) {
         runningBalance += m.income - m.expense;
@@ -113,7 +160,14 @@ class ExportHelper {
       for (var customer in customers) {
         final customerLoans =
             allLoans.where((l) => l.customerId == customer.id).toList();
-        if (customerLoans.isEmpty) continue;
+        final accounts = portfolioState == null
+            ? <Map<String, dynamic>>[]
+            : PortfolioLedger.rows(portfolioState, 'credit_accounts')
+                .where((a) =>
+                    a['status'] == 'active' &&
+                    a['customerId'] == customer.id.toString())
+                .toList();
+        if (customerLoans.isEmpty && accounts.isEmpty) continue;
 
         double totalLent = 0;
         double totalPaid = 0;
@@ -129,14 +183,26 @@ class ExportHelper {
           final debt = state.totalDebt;
           if (debt > 0) totalDebt += debt;
         }
+        for (final account in accounts) {
+          totalLent +=
+              ((account['terms'] as Map)['principal'] as num).toDouble();
+          totalPaid += PortfolioLedger.activePayments(
+                  portfolioState!, account['applicationId'] as String) /
+              100;
+          totalDebt += PortfolioLedger.accountBalance(portfolioState, account)
+                  .fold<int>(0, (s, r) => s + (r['remainingCents'] as int)) /
+              100;
+        }
 
         csv.writeln('${_escape(customer.name)};'
             '${_escape(customer.cedula ?? "N/A")};'
-            '${customerLoans.length};'
+            '${customerLoans.length + accounts.length};'
             '${totalLent.toStringAsFixed(2)};'
             '${totalPaid.toStringAsFixed(2)};'
             '${totalDebt.toStringAsFixed(2)}');
       }
+      csv.writeln(
+          'ALCANCE;Préstamos directos y créditos activados. El saldo de créditos amortizados incluye cuotas futuras y cargos pactados.');
 
       // Guardar el archivo
       return DocumentFiles.save(
@@ -153,17 +219,30 @@ class ExportHelper {
     List<LoanTransaction> allLoans,
     List<Payment> allPayments,
     double initialCapital,
-    String? businessName,
-  ) async {
+    String? businessName, {
+    Map<String, dynamic>? portfolioState,
+  }) async {
     try {
       final currency = NumberFormat.currency(symbol: r'$', decimalDigits: 2);
-      final doc = pw.Document();
+      final regular =
+          pw.Font.ttf(await rootBundle.load('assets/fonts/Roboto-Regular.ttf'));
+      final bold =
+          pw.Font.ttf(await rootBundle.load('assets/fonts/Roboto-Bold.ttf'));
+      final doc =
+          pw.Document(theme: pw.ThemeData.withFont(base: regular, bold: bold));
 
       final rows = <List<String>>[];
       for (var customer in customers) {
         final customerLoans =
             allLoans.where((l) => l.customerId == customer.id).toList();
-        if (customerLoans.isEmpty) continue;
+        final accounts = portfolioState == null
+            ? <Map<String, dynamic>>[]
+            : PortfolioLedger.rows(portfolioState, 'credit_accounts')
+                .where((a) =>
+                    a['status'] == 'active' &&
+                    a['customerId'] == customer.id.toString())
+                .toList();
+        if (customerLoans.isEmpty && accounts.isEmpty) continue;
 
         double totalLent = 0;
         double totalPaid = 0;
@@ -178,11 +257,21 @@ class ExportHelper {
           final debt = state.totalDebt;
           if (debt > 0) totalDebt += debt;
         }
+        for (final account in accounts) {
+          totalLent +=
+              ((account['terms'] as Map)['principal'] as num).toDouble();
+          totalPaid += PortfolioLedger.activePayments(
+                  portfolioState!, account['applicationId'] as String) /
+              100;
+          totalDebt += PortfolioLedger.accountBalance(portfolioState, account)
+                  .fold<int>(0, (s, r) => s + (r['remainingCents'] as int)) /
+              100;
+        }
 
         rows.add([
           customer.name,
           customer.cedula ?? 'N/A',
-          customerLoans.length.toString(),
+          (customerLoans.length + accounts.length).toString(),
           currency.format(totalLent),
           currency.format(totalPaid),
           currency.format(totalDebt),
@@ -206,6 +295,14 @@ class ExportHelper {
               style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
             ),
             pw.SizedBox(height: 20),
+            if (portfolioState != null) ...[
+              pw.Text(
+                  'Disponible: ${currency.format(PortfolioLedger.availableCash(portfolioState))}'),
+              pw.Text(
+                  'Incluye préstamos directos y créditos activados. El saldo amortizado incluye cuotas futuras y cargos pactados; no equivale al capital pendiente.',
+                  style: const pw.TextStyle(fontSize: 9)),
+              pw.SizedBox(height: 12),
+            ],
             pw.Text('Resumen de clientes y deudas',
                 style:
                     pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
