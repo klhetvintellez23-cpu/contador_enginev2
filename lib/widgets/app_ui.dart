@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../utils/app_theme.dart';
 
+export 'welcome_entrance.dart' show WelcomeEntrance;
+
 abstract final class AppMotion {
   static Duration duration(BuildContext context, [int milliseconds = 220]) =>
       MediaQuery.disableAnimationsOf(context)
@@ -223,45 +225,4 @@ class CalmPageTransitions extends PageTransitionsBuilder {
           child: child,
         ));
   }
-}
-
-/// A single, brief entrance; the app remains interactive during the reveal.
-class WelcomeEntrance extends StatelessWidget {
-  final Widget child;
-  const WelcomeEntrance({super.key, required this.child});
-  @override
-  Widget build(BuildContext context) => Stack(fit: StackFit.expand, children: [
-        Reveal(delayMilliseconds: 400, child: child),
-        IgnorePointer(
-            child: ExcludeSemantics(
-                child: TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0, end: 1),
-          duration: AppMotion.duration(context, 800),
-          builder: (_, value, __) {
-            if (value == 1) return const SizedBox.shrink();
-            final entry = const Interval(0, .35, curve: Curves.easeOutCubic)
-                .transform(value);
-            final exit = const Interval(.55, 1, curve: Curves.easeInOutCubic)
-                .transform(value);
-            final logo = ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: Image.asset(
-                    'assets/icons/contador_engine_icon_source.png',
-                    width: 96,
-                    height: 96,
-                    cacheWidth: 192));
-            return Opacity(
-                opacity: 1 - exit,
-                child: ColoredBox(
-                    color: AppTheme.background,
-                    child: Center(
-                        child: Opacity(
-                            opacity: entry,
-                            child: Transform.translate(
-                                offset: Offset(0, 8 * (1 - entry) - 6 * exit),
-                                child: Transform.scale(
-                                    scale: .92 + .08 * entry, child: logo))))));
-          },
-        ))),
-      ]);
 }

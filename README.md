@@ -15,29 +15,59 @@ de solicitante, analista y cumplimiento mantienen su acceso específico.
 
 ## Ejecutar
 
+**Si es la primera vez que ejecutas el proyecto en tu laptop, sigue la
+[guía paso a paso para Windows y Linux](docs/ejecutar-en-laptop.md).** Incluye
+instalación de Flutter, herramientas del sistema, descarga del código, primer
+inicio de sesión, compilación y solución de errores frecuentes.
+
+| Sistema | Guía | Estado |
+| --- | --- | --- |
+| Windows | [Instalar y ejecutar](docs/ejecutar-en-laptop.md#windows) | Compilación y ejecución verificadas localmente. |
+| Linux (Ubuntu/Debian) | [Instalar y ejecutar](docs/ejecutar-en-laptop.md#linux-ubuntu-y-debian) | Configuración incluida; pendiente de validación en una laptop Linux. |
+
+Versión de referencia: **Flutter 3.41.7 / Dart 3.11.5**. Las dependencias
+resueltas en `pubspec.lock` requieren Flutter **3.41.0 o superior** y Dart
+**3.11.0 o superior** dentro de la serie 3.x. Conserva ese archivo al instalar.
+
 La navegación y las pantallas usan el nuevo diseño adaptable en morado y fondos
 claros. Consulta la [auditoría, cambios de interfaz y validación](docs/rediseno-ui.md).
 La [integración local y navegación por roles](docs/integracion-local-creditos.md)
 describe el flujo aprobado, los respaldos y el alcance real de la sincronización.
+La [intro actual](docs/intro-premium.md) dura 3,4 segundos y revela la pantalla
+de acceso sobre un fondo morado con ondas suaves.
 
-```sh
+### Inicio rápido con las herramientas ya instaladas
+
+Windows, desde PowerShell:
+
+```powershell
+git clone https://github.com/klhetvintellez23-cpu/contador_enginev2.git
+cd contador_enginev2
 flutter pub get
 flutter run -d windows
 ```
 
-La base Hive se crea automáticamente. No necesita Supabase ni credenciales remotas.
-Windows es la plataforma principal de prueba. Los datos se conservan localmente
-para el usuario de Windows; cerrar la aplicación no elimina la base.
+Linux, desde una terminal del escritorio:
 
-Para generar la versión de escritorio:
-
-```sh
-flutter build windows
+```bash
+git clone https://github.com/klhetvintellez23-cpu/contador_enginev2.git
+cd contador_enginev2
+flutter pub get
+flutter run -d linux
 ```
 
-Ejecuta `build/windows/x64/runner/Release/mi_app_flutter.exe`. Si copias la
-aplicación a otra carpeta, conserva toda la carpeta `Release`, incluidos sus DLL
-y la carpeta `data`.
+Si ya descargaste el proyecto, abre una terminal en la carpeta que contiene
+`pubspec.yaml` y ejecuta solo los dos comandos de Flutter. Necesitas acceso al
+repositorio para clonarlo; la guía también explica la descarga como ZIP.
+
+La base Hive se crea automáticamente. No necesita Supabase, un archivo `.env`
+ni un servidor de base de datos. Los datos se conservan localmente para cada
+usuario del sistema; cerrar la aplicación no elimina la base. Cada laptop tiene
+sus propios datos.
+
+Para preparar un ejecutable y probar la intro en modo optimizado, consulta
+[compilar en Windows](docs/ejecutar-en-laptop.md#5-generar-el-ejecutable-de-windows)
+o [compilar en Linux](docs/ejecutar-en-laptop.md#5-generar-el-ejecutable-de-linux).
 
 ## Cuentas de demostración
 
@@ -51,6 +81,9 @@ Todas comienzan con la contraseña `ContadorLocal2026!`.
 | Gerencia | admin@contador.local |
 
 Si cambiaste la contraseña del administrador previamente, la migración conserva su hash.
+Después de introducir correo y contraseña, escribe los cuatro caracteres que
+aparecen en **Código de prueba actual** y pulsa **Verificar código**. En este
+prototipo la verificación se muestra dentro de la app; no se envía por correo ni SMS.
 Desde el acceso se pueden registrar nuevas cuentas de solicitante; no pueden elegir
 un rol privilegiado. En Seguridad puedes cambiar tu contraseña y activar TOTP con
 una aplicación autenticadora. Guarda el secreto TOTP de recuperación fuera de la app.
@@ -136,8 +169,10 @@ No se realizan desembolsos, cobros bancarios, transferencias ni consultas extern
 ```sh
 flutter analyze
 flutter test
-flutter build windows
 ```
+
+Compila desde el sistema correspondiente: `flutter build windows --release` en
+Windows o `flutter build linux --release` en Linux.
 
 Las pruebas incluyen referencias de amortización, DTI, permisos negativos, ciclo de
 aprobación, devolución, pagos y anulaciones, TOTP, persistencia, restauración,
