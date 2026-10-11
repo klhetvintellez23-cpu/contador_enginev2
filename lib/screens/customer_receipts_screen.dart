@@ -203,8 +203,7 @@ class _CustomerReceiptsScreenState extends State<CustomerReceiptsScreen> {
                                 Container(
                                   padding: const EdgeInsets.all(10),
                                   decoration: BoxDecoration(
-                                    color:
-                                        theme.colorScheme.primary.withAlpha(26),
+                                    color: AppTheme.neutral,
                                     borderRadius: BorderRadius.circular(14),
                                   ),
                                   child: Icon(Icons.receipt_long_rounded,

@@ -80,7 +80,7 @@ class CapitalHistoryScreen extends StatelessWidget {
                                   style: AppFonts.inter(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
-                                      color: const Color(0xFF1E293B)),
+                                      color: AppTheme.ink),
                                 ),
                                 Text(
                                   DateFormat('dd MMM, yyyy - HH:mm')

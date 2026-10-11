@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:hive/hive.dart';
 import 'totp_service.dart';
+import 'prototype_verification_code.dart';
 import '../models/credit_engine.dart';
 import '../models/credit_account.dart';
 
@@ -31,6 +32,19 @@ class LocalUser {
   Map<String, dynamic>? get userMetadata => {'name': name};
 }
 
+/// An in-memory, single-use credential check for the local prototype flow.
+/// It does not create a session or retain the user's password.
+class PrototypeSignInChallenge {
+  final String _email;
+  final String _passwordHash;
+  PrototypeVerificationCode? _verification;
+  // Lazily created when verification is opened, never on a widget rebuild.
+  PrototypeVerificationCode get verification =>
+      _verification ??= PrototypeVerificationCode();
+  PrototypeSignInChallenge._(this._email, this._passwordHash);
+  void _dispose() => _verification?.dispose();
+}
+
 /// Base persistente del dispositivo, independiente del espejo descartable.
 class LocalDatabaseService {
   static final LocalDatabaseService _instance = LocalDatabaseService._();
@@ -42,6 +56,7 @@ class LocalDatabaseService {
   final _changes = StreamController<void>.broadcast();
   Stream<void> get businessChanges => _changes.stream;
   LocalUser? _user;
+  PrototypeSignInChallenge? _prototypeChallenge;
   LocalUser? get currentUser {
     if (_user == null || !_database.isOpen) return null;
     final session = _database.get('session_v2');
@@ -69,6 +84,8 @@ class LocalDatabaseService {
       role: UserRole.values.byName(m['role'] as String));
 
   Future<void> init() async {
+    _prototypeChallenge?._dispose();
+    _prototypeChallenge = null;
     _database = await Hive.openBox('contador_local_database_v1');
     if (!_database.containsKey('account')) {
       final salt =
@@ -125,17 +142,65 @@ class LocalDatabaseService {
   }
 
   Future<void> signIn(String email, String password, {String? otp}) async {
+    final account = await _checkCredentials(email, password, otp: otp);
+    await _openSession(account);
+  }
+
+  /// The explicitly simulated UI uses a rotating local alphanumeric code.
+  /// The existing signIn API continues to enforce configured authenticators.
+  Future<PrototypeSignInChallenge> beginPrototypeSignIn(
+      String email, String password) async {
+    _prototypeChallenge?._dispose();
+    _prototypeChallenge = null;
+    final account = await _checkCredentials(email, password, prototype: true);
+    return _prototypeChallenge = PrototypeSignInChallenge._(
+        account['email'] as String, account['hash'] as String);
+  }
+
+  void cancelPrototypeSignIn(PrototypeSignInChallenge challenge) {
+    challenge._dispose();
+    if (identical(_prototypeChallenge, challenge)) _prototypeChallenge = null;
+  }
+
+  Future<void> completePrototypeSignIn(
+      PrototypeSignInChallenge challenge, String code) async {
+    if (!identical(_prototypeChallenge, challenge)) {
+      throw StateError('Vuelve a iniciar sesión para continuar.');
+    }
+    if (!challenge.verification.matches(code)) {
+      throw ArgumentError('Código incorrecto o vencido. Usa el código actual.');
+    }
+    final raw = _users[challenge._email];
+    if (raw is! Map || raw['hash'] != challenge._passwordHash) {
+      challenge._dispose();
+      _prototypeChallenge = null;
+      throw StateError('Vuelve a iniciar sesión para continuar.');
+    }
+    final account = Map<String, dynamic>.from(raw);
+    _checkAccountLock(account);
+    challenge.verification.stop();
+    _prototypeChallenge = null;
+    await _openSession(account);
+  }
+
+  void _checkAccountLock(Map<String, dynamic> account) {
+    final locked = DateTime.tryParse(account['lockedUntil']?.toString() ?? '');
+    if (locked != null && locked.isAfter(DateTime.now())) {
+      throw StateError('Espera cinco minutos antes de reintentar.');
+    }
+  }
+
+  Future<Map<String, dynamic>> _checkCredentials(String email, String password,
+      {String? otp, bool prototype = false}) async {
     final normalized = email.trim().toLowerCase();
     final users = _users;
     final raw = users[normalized];
     if (raw is! Map) throw StateError('Credenciales incorrectas.');
     final account = Map<String, dynamic>.from(raw);
-    final locked = DateTime.tryParse(account['lockedUntil']?.toString() ?? '');
-    if (locked != null && locked.isAfter(DateTime.now())) {
-      throw StateError('Espera cinco minutos antes de reintentar.');
-    }
+    _checkAccountLock(account);
     if (_passwordHash(password, account['salt'] as String) != account['hash'] ||
-        (account['totp'] != null &&
+        (!prototype &&
+            account['totp'] != null &&
             !TotpService.verify(account['totp'] as String, otp ?? ''))) {
       account['failures'] = (account['failures'] as int? ?? 0) + 1;
       if ((account['failures'] as int) >= 5) {
@@ -146,6 +211,12 @@ class LocalDatabaseService {
       await _database.put('users_v2', users);
       throw StateError('Credenciales incorrectas.');
     }
+    return account;
+  }
+
+  Future<void> _openSession(Map<String, dynamic> account) async {
+    final normalized = account['email'] as String;
+    final users = _users;
     final token =
         base64UrlEncode(List.generate(32, (_) => Random.secure().nextInt(256)));
     account['token'] = token;
@@ -163,6 +234,8 @@ class LocalDatabaseService {
   }
 
   Future<void> signOut() async {
+    _prototypeChallenge?._dispose();
+    _prototypeChallenge = null;
     await _writes;
     await _database.delete('session_v2');
     _user = null;

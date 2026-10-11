@@ -1,3 +1,4 @@
+import '../utils/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/local_fonts.dart';
@@ -302,8 +303,7 @@ class _ResultRow extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label,
-              style: AppFonts.inter(
-                  fontSize: 12.5, color: const Color(0xFF475569))),
+              style: AppFonts.inter(fontSize: 12.5, color: AppTheme.muted)),
           Text(value,
               style: AppFonts.inter(fontSize: 13, fontWeight: FontWeight.bold)),
         ],

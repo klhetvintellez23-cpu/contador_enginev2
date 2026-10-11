@@ -181,7 +181,7 @@ class _SummaryRow extends StatelessWidget {
                 style: AppFonts.inter(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: const Color(0xFF1E293B),
+                  color: AppTheme.ink,
                 ),
               ),
             ],

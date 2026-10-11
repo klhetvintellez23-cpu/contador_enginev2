@@ -8,6 +8,7 @@ import 'package:contador_engine/models/credit_engine.dart';
 import 'package:contador_engine/screens/credit_portal_screen.dart';
 import 'package:contador_engine/screens/auth_screen.dart';
 import 'package:contador_engine/utils/app_theme.dart';
+import 'package:contador_engine/widgets/morphing_navigation.dart';
 
 void main() {
   final db = LocalDatabaseService();
@@ -34,7 +35,7 @@ void main() {
         MaterialApp(theme: AppTheme.light, home: const CreditPortalScreen()));
     await tester.pumpAndSettle();
     expect(find.text('Auditoría'), findsNothing);
-    await tester.tap(find.text('Mis solicitudes').last);
+    await tester.tap(find.byKey(MorphingNavigation.destinationKey(1)));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Compra de equipo').last);
     await tester.pumpAndSettle();
@@ -80,7 +81,7 @@ void main() {
     await tester.pumpWidget(
         MaterialApp(theme: AppTheme.light, home: const CreditPortalScreen()));
     expect(find.text('Auditoría'), findsNothing);
-    await tester.tap(find.text('Perfil').last);
+    await tester.tap(find.byKey(MorphingNavigation.destinationKey(2)));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Administración avanzada'));
     await tester.tap(find.text('Administración avanzada'));
@@ -91,7 +92,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
   testWidgets(
-      'Acceso estrecho valida campos y muestra 2FA solo cuando se necesita',
+      'Acceso estrecho valida correo y contraseña sin mezclar el código',
       (tester) async {
     tester.view.physicalSize = const Size(360, 740);
     tester.view.devicePixelRatio = 1;
@@ -105,10 +106,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Escribe un correo válido.'), findsOneWidget);
     expect(find.text('Escribe tu contraseña.'), findsOneWidget);
-    await tester.ensureVisible(find.byType(CheckboxListTile));
-    await tester.tap(find.byType(CheckboxListTile));
-    await tester.pumpAndSettle();
-    expect(find.text('Código de 6 dígitos'), findsOneWidget);
+    expect(find.byType(CheckboxListTile), findsNothing);
+    expect(find.byType(TextFormField), findsNWidgets(2));
     expect(tester.takeException(), isNull);
   });
   testWidgets(
@@ -123,7 +122,7 @@ void main() {
     });
     await tester.pumpWidget(
         MaterialApp(theme: AppTheme.light, home: const CreditPortalScreen()));
-    await tester.tap(find.text('Perfil').last);
+    await tester.tap(find.byKey(MorphingNavigation.destinationKey(2)));
     await tester.pumpAndSettle();
     expect(find.text('admin@contador.local'), findsOneWidget);
     await tester.tap(find.text('Cerrar sesión'));

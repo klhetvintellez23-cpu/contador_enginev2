@@ -5,11 +5,11 @@ abstract final class AppTheme {
   static const primary = Color(0xFF7935C8);
   static const accent = Color(0xFFB976FF);
   static const lavender = Color(0xFFF4ECFF);
-  static const ink = Color(0xFF191620);
-  static const muted = Color(0xFF686171);
-  static const background = Color(0xFFF8F9FB);
-  static const neutral = Color(0xFFF1F3F6);
-  static const border = Color(0xFFECEEF2);
+  static const ink = Color(0xFF191919);
+  static const muted = Color(0xFF717171);
+  static const background = Color(0xFFF7F7F7);
+  static const neutral = Color(0xFFF1F1F1);
+  static const border = Color(0xFFEAEAEA);
   static ThemeData get light {
     final scheme = ColorScheme.fromSeed(seedColor: primary).copyWith(
         primary: primary,
@@ -58,8 +58,8 @@ abstract final class AppTheme {
               color: ink)),
       cardTheme: CardThemeData(
           color: Colors.white,
-          elevation: 1.2,
-          shadowColor: ink.withValues(alpha: .08),
+          elevation: 1.5,
+          shadowColor: Colors.black.withValues(alpha: .08),
           surfaceTintColor: Colors.transparent,
           margin: EdgeInsets.zero,
           shape:

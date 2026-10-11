@@ -1,3 +1,4 @@
+import '../utils/app_theme.dart';
 import 'package:flutter/material.dart';
 import '../utils/local_fonts.dart';
 
@@ -88,7 +89,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                         style: AppFonts.inter(
                           fontSize: 17,
                           fontWeight: FontWeight.w700,
-                          color: const Color(0xFF1F2233),
+                          color: AppTheme.ink,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -118,7 +119,7 @@ class _UpdateDialogState extends State<_UpdateDialog> {
                     style: AppFonts.inter(
                       fontSize: 14,
                       height: 1.5,
-                      color: const Color(0xFF4B5063),
+                      color: AppTheme.muted,
                     ),
                   ),
                 ),

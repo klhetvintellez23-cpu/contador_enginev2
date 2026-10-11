@@ -217,9 +217,7 @@ class PillSelector extends StatelessWidget {
                   style: AppFonts.inter(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: isPlaceholder
-                        ? Colors.grey[500]
-                        : const Color(0xFF1E293B),
+                    color: isPlaceholder ? Colors.grey[500] : AppTheme.ink,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

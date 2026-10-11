@@ -23,6 +23,7 @@ import 'package:contador_engine/screens/lock_screen.dart';
 import 'package:contador_engine/screens/auth_screen.dart';
 import 'package:contador_engine/utils/app_theme.dart';
 import 'package:contador_engine/widgets/app_ui.dart';
+import 'package:contador_engine/widgets/morphing_navigation.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -125,18 +126,23 @@ void main() {
     for (final width in [390.0, 1280.0]) {
       tester.view.physicalSize = Size(width, 900);
       await show(const HomeScreen());
+      expect(find.byKey(const ValueKey('request-summary')), findsNothing);
       await screenshot('admin-${width.toInt()}');
-      await tester.tap(find.text('Cartera').last);
+      await tester.tap(find.byKey(MorphingNavigation.destinationKey(1)));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('request-summary')), findsOneWidget);
+      await screenshot('solicitudes-${width.toInt()}');
+      await tester.tap(find.byKey(MorphingNavigation.destinationKey(2)));
       await tester.pumpAndSettle();
       expect(find.text('Nuevo préstamo'), findsOneWidget);
-      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byType(MorphingNavigation), findsOneWidget);
       await screenshot('inicio-${width.toInt()}');
       await tester.enterText(find.byType(TextField).first, '8-100-1');
       await tester.pumpAndSettle();
       expect(find.text('Carlos Pérez'), findsOneWidget);
       expect(find.text('Ana Martínez'), findsNothing);
       await screenshot('busqueda-activa-${width.toInt()}');
-      await tester.tap(find.text('Perfil').last);
+      await tester.tap(find.byKey(MorphingNavigation.destinationKey(3)));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Ajustes del negocio'));
       await tester.pumpAndSettle();
@@ -149,7 +155,7 @@ void main() {
       expect(find.text('Exportar respaldo'), findsOneWidget);
       await tester.tap(find.byType(BackButton));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Cartera').last);
+      await tester.tap(find.byKey(MorphingNavigation.destinationKey(2)));
       await tester.pumpAndSettle();
       expect(find.text('Carlos Pérez'), findsOneWidget);
       expect(find.text('Ana Martínez'), findsNothing);
@@ -204,19 +210,17 @@ void main() {
         'Inicio': Icons.home_outlined
       };
       for (final destination in destinations.entries) {
-        final navigation = find.byType(NavigationBar);
-        await tester.tap(find
-            .descendant(
-                of: navigation, matching: find.byIcon(destination.value))
-            .first);
+        final navigation = find.byType(MorphingNavigation);
+        final selectedIndex = ['Inicio', 'Solicitudes', 'Cartera', 'Perfil']
+            .indexOf(destination.key);
+        await tester
+            .tap(find.byKey(MorphingNavigation.destinationKey(selectedIndex)));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull,
             reason:
                 '${destination.key} a ${width.toInt()} px y texto ampliado');
-        final selectedIndex = ['Inicio', 'Solicitudes', 'Cartera', 'Perfil']
-            .indexOf(destination.key);
-        expect(tester.widget<NavigationBar>(navigation).selectedIndex,
-            selectedIndex);
+        expect(
+            tester.widget<MorphingNavigation>(navigation).index, selectedIndex);
       }
     }
     await tester.pumpWidget(const SizedBox.shrink());
@@ -232,7 +236,7 @@ void main() {
         value: provider,
         child: MaterialApp(theme: AppTheme.light, home: const HomeScreen())));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Cartera').last);
+    await tester.tap(find.byKey(MorphingNavigation.destinationKey(2)));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Nuevo préstamo'));
     await tester.pumpAndSettle();

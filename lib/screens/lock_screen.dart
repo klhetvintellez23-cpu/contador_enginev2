@@ -75,7 +75,7 @@ class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     if (!_checked) {
       return const Scaffold(
-        backgroundColor: Color(0xFFF8F9FD),
+        backgroundColor: AppTheme.background,
         body: SizedBox.shrink(),
       );
     }

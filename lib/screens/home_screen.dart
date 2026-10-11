@@ -300,6 +300,12 @@ class _HomeScreenState extends State<HomeScreen> {
       return RoleShell(
           index: _currentIndex,
           labels: const ['Inicio', 'Solicitudes', 'Cartera', 'Perfil'],
+          selectedIcons: const [
+            Icons.home_rounded,
+            Icons.description_rounded,
+            Icons.account_balance_wallet_rounded,
+            Icons.person_rounded
+          ],
           icons: const [
             Icons.home_outlined,
             Icons.description_outlined,
@@ -753,7 +759,7 @@ class _DashboardViewState extends State<_DashboardView> {
                                     Hero(
                                         tag: 'customer-${customer.id}',
                                         child: CircleAvatar(
-                                            backgroundColor: AppTheme.lavender,
+                                            backgroundColor: AppTheme.neutral,
                                             foregroundColor: AppTheme.primary,
                                             child: Text(customer.name.isEmpty
                                                 ? '?'
@@ -966,7 +972,7 @@ class _HistoryViewState extends State<_HistoryView> {
                                         style: AppFonts.inter(
                                             fontWeight: FontWeight.w700,
                                             fontSize: 16,
-                                            color: const Color(0xFF1E293B))),
+                                            color: AppTheme.ink)),
                                     const SizedBox(height: 4),
                                     Text(
                                       receiptCount == 0
@@ -1943,7 +1949,7 @@ class _SettingsViewState extends State<_SettingsView> {
                             style: AppFonts.inter(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 28,
-                                color: const Color(0xFF1E293B)),
+                                color: AppTheme.ink),
                           ),
                           const SizedBox(height: 16),
                           if (preview.isEmpty)
@@ -2618,7 +2624,7 @@ class _MetricCard extends StatelessWidget {
             style: AppFonts.inter(
               fontSize: 18,
               fontWeight: FontWeight.bold,
-              color: const Color(0xFF1E293B),
+              color: AppTheme.ink,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -2672,7 +2678,7 @@ class _BigNumberCard extends StatelessWidget {
                   style: AppFonts.inter(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
-                    color: const Color(0xFF1E293B),
+                    color: AppTheme.ink,
                     height: 1,
                   ),
                   maxLines: 1,

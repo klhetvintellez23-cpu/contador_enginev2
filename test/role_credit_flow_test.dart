@@ -165,6 +165,11 @@ void main() {
     await tap(tester, find.text('Registrar desembolso'));
     await screenshot(tester, 'desembolso-390');
     await tester.enterText(find.byType(TextFormField).last, 'Entrega 001');
+    // Dismiss the transient confirmation before interacting at the bottom.
+    if (find.byType(SnackBar).evaluate().isNotEmpty) {
+      await tester.drag(find.byType(SnackBar), const Offset(0, 100));
+      await tester.pumpAndSettle();
+    }
     await tap(tester, find.text('Seleccionar fecha real de entrega'));
     await tap(tester, find.text('OK'));
     await tap(tester, find.byType(CheckboxListTile));

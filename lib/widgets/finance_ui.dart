@@ -19,7 +19,7 @@ class PortfolioBalanceCard extends StatelessWidget {
     final balance =
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Row(children: [
-        IconMedallion(Icons.account_balance_wallet_outlined, accent: true),
+        IconMedallion(Icons.account_balance_wallet_outlined),
         SizedBox(width: 12),
         Expanded(
             child: Text('Disponible para prestar',
@@ -83,19 +83,16 @@ class FinanceCard extends StatelessWidget {
 
 class IconMedallion extends StatelessWidget {
   final IconData icon;
-  final bool accent;
   final double size;
-  const IconMedallion(this.icon,
-      {super.key, this.accent = false, this.size = 42});
+  const IconMedallion(this.icon, {super.key, this.size = 42});
   @override
   Widget build(BuildContext context) => Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-          color: accent ? AppTheme.lavender : AppTheme.neutral,
+          color: AppTheme.neutral,
           borderRadius: BorderRadius.circular(size * .38)),
-      child: Icon(icon,
-          size: size * .48, color: accent ? AppTheme.primary : AppTheme.muted));
+      child: Icon(icon, size: size * .48, color: AppTheme.primary));
 }
 
 class FinanceMetric extends StatelessWidget {

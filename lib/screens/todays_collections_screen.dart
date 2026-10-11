@@ -262,7 +262,7 @@ class _TodaysCollectionsScreenState extends State<TodaysCollectionsScreen> {
                                         style: AppFonts.inter(
                                             fontWeight: FontWeight.w600,
                                             fontSize: 13,
-                                            color: const Color(0xFF475569)),
+                                            color: AppTheme.muted),
                                       ),
                                     ],
                                   ),
@@ -280,7 +280,7 @@ class _TodaysCollectionsScreenState extends State<TodaysCollectionsScreen> {
                                         style: AppFonts.inter(
                                             fontWeight: FontWeight.w600,
                                             fontSize: 13,
-                                            color: const Color(0xFF475569)),
+                                            color: AppTheme.muted),
                                       ),
                                     ],
                                   ),
@@ -333,7 +333,7 @@ class _FilterChip extends StatelessWidget {
           style: AppFonts.inter(
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: selected ? Colors.white : const Color(0xFF475569),
+            color: selected ? Colors.white : AppTheme.muted,
           ),
         ),
       ),

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../utils/app_theme.dart';
 
 class ReceiptCard extends StatelessWidget {
   final String customerName;
@@ -31,7 +32,7 @@ class ReceiptCard extends StatelessWidget {
 
   // Usar TextStyle del sistema para evitar que GoogleFonts bloquee captureFromWidget
   static const _bold =
-      TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E293B));
+      TextStyle(fontWeight: FontWeight.bold, color: AppTheme.ink);
   static const _grey = TextStyle(color: Colors.grey, fontSize: 12);
 
   @override
@@ -79,7 +80,7 @@ class ReceiptCard extends StatelessWidget {
                         child: Container(
                           width: 50,
                           height: 50,
-                          color: const Color(0xFF7C3AED).withAlpha(26),
+                          color: AppTheme.neutral,
                           child: Image.file(
                             File(issuerLogoPath!),
                             fit: BoxFit.cover,
@@ -89,7 +90,7 @@ class ReceiptCard extends StatelessWidget {
                     : Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF7C3AED).withAlpha(26),
+                          color: AppTheme.neutral,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(Icons.verified_rounded,
@@ -107,7 +108,7 @@ class ReceiptCard extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
               width: double.infinity,
               decoration: BoxDecoration(
-                color: const Color(0xFFF8F9FF),
+                color: AppTheme.neutral,
                 borderRadius: BorderRadius.circular(24),
               ),
               child: Column(
@@ -158,7 +159,7 @@ class ReceiptCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: remainingBalance <= 0
                     ? const Color(0xFF10B981).withAlpha(13)
-                    : const Color(0xFF1E293B).withAlpha(5),
+                    : AppTheme.ink.withAlpha(5),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                     color: (remainingBalance <= 0
@@ -185,7 +186,7 @@ class ReceiptCard extends StatelessWidget {
                           fontSize: 20,
                           color: remainingBalance <= 0
                               ? const Color(0xFF10B981)
-                              : const Color(0xFF1E293B),
+                              : AppTheme.ink,
                         ),
                       ),
                     ],

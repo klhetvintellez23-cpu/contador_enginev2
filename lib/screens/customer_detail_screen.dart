@@ -61,7 +61,7 @@ class CustomerDetailScreen extends StatelessWidget {
                 Hero(
                     tag: 'customer-${customer.id}',
                     child: CircleAvatar(
-                        backgroundColor: AppTheme.lavender,
+                        backgroundColor: AppTheme.neutral,
                         foregroundColor: AppTheme.primary,
                         child: Text(customer.name.isEmpty
                             ? '?'
@@ -207,7 +207,7 @@ class CustomerDetailScreen extends StatelessWidget {
                                 Container(
                                   padding: const EdgeInsets.all(20),
                                   decoration: BoxDecoration(
-                                    color: t.colorScheme.primary.withAlpha(20),
+                                    color: AppTheme.neutral,
                                     shape: BoxShape.circle,
                                   ),
                                   child: Icon(
@@ -222,7 +222,7 @@ class CustomerDetailScreen extends StatelessWidget {
                                   style: AppFonts.inter(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 15,
-                                      color: const Color(0xFF1E293B)),
+                                      color: AppTheme.ink),
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
@@ -493,7 +493,7 @@ class _LoanCardState extends State<_LoanCard> {
                       style: AppFonts.inter(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: const Color(0xFF1E293B),
+                        color: AppTheme.ink,
                       ),
                       maxLines: _isExpanded ? null : 2,
                       overflow: _isExpanded

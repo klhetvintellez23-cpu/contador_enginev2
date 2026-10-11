@@ -1,3 +1,4 @@
+import '../utils/app_theme.dart';
 import 'package:flutter/material.dart';
 import '../utils/local_fonts.dart';
 import 'package:provider/provider.dart';
@@ -113,7 +114,7 @@ class CapitalAlertsBanner extends StatelessWidget {
                                   alert.message,
                                   style: AppFonts.inter(
                                     fontSize: 12,
-                                    color: const Color(0xFF475569),
+                                    color: AppTheme.muted,
                                   ),
                                 ),
                               ],

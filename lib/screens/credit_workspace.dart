@@ -238,7 +238,7 @@ class _CreditWorkspaceState extends State<CreditWorkspace> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                           Row(children: [
-                            IconMedallion(icon, accent: true),
+                            IconMedallion(icon),
                             const Spacer(),
                             const Icon(Icons.arrow_outward_rounded,
                                 size: 18, color: AppTheme.muted)
@@ -271,14 +271,76 @@ class _CreditWorkspaceState extends State<CreditWorkspace> {
                           size: 19, color: AppTheme.muted),
                     ])));
 
-  Widget overview() {
-    final apps = applications;
-    final client = user.role == UserRole.client;
-    final manager = user.role == UserRole.manager;
-    final pending = apps.where((a) => a['status'] == stage).toList();
-    final featured = client
-        ? (apps.isEmpty ? null : apps.first)
-        : (pending.isEmpty ? null : pending.first);
+  Widget _portfolioSummary(Map<String, dynamic>? featured) {
+    final balance =
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Row(children: [
+        IconMedallion(Icons.account_balance_wallet_outlined),
+        SizedBox(width: 12),
+        Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Tu cartera',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+          SizedBox(height: 4),
+          Text('Disponible para prestar',
+              style: TextStyle(color: AppTheme.muted, fontSize: 13)),
+        ])),
+      ]),
+      const SizedBox(height: 14),
+      Text(
+          money.format(
+              PortfolioLedger.availableCash(service.db.readPortfolio())),
+          style: const TextStyle(
+              fontSize: 38,
+              fontWeight: FontWeight.w700,
+              height: 1.1,
+              letterSpacing: -1.2)),
+    ]);
+    final actions = Wrap(
+        spacing: 10,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          FilledButton.icon(
+              onPressed: _openPortfolio,
+              icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+              iconAlignment: IconAlignment.end,
+              label: const Text('Abrir cartera')),
+          OutlinedButton.icon(
+              onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                      builder: (_) => const TodaysCollectionsScreen())),
+              icon: const Icon(Icons.today_outlined, size: 19),
+              label: const Text('Cobros de hoy')),
+          if (featured != null)
+            TextButton(
+                onPressed: () => open(featured),
+                child: const Text('Revisar solicitud')),
+        ]);
+    return FinanceCard(
+      key: const ValueKey('home-portfolio-summary'),
+      padding: const EdgeInsets.all(20),
+      child: LayoutBuilder(
+          builder: (context, box) => box.maxWidth >= 720 &&
+                  MediaQuery.textScalerOf(context).scale(14) <= 18
+              ? Row(children: [
+                  Expanded(child: balance),
+                  const SizedBox(width: 24),
+                  Flexible(
+                      child: Align(
+                          alignment: Alignment.centerRight, child: actions)),
+                ])
+              : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  balance,
+                  const SizedBox(height: 18),
+                  actions,
+                ])),
+    );
+  }
+
+  Widget _requestSummary(List<Map<String, dynamic>> apps) {
     final inReview = apps
         .where((a) =>
             ['submitted', 'compliance', 'management'].contains(a['status']))
@@ -293,20 +355,119 @@ class _CreditWorkspaceState extends State<CreditWorkspace> {
       (Icons.timelapse_rounded, '$inReview', 'En revisión'),
       (Icons.account_balance_wallet_outlined, '$active', 'Activadas'),
     ];
+    return FinanceGrid(
+      key: const ValueKey('request-summary'),
+      columns: 3,
+      minItemWidth: 88,
+      children: [
+        for (var i = 0; i < summary.length; i++)
+          FinanceCard(
+              key: ValueKey('request-metric-$i'),
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      IconMedallion(summary[i].$1, size: 32),
+                      const SizedBox(width: 8),
+                      Expanded(
+                          child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
+                              child: Text(summary[i].$2,
+                                  style: const TextStyle(
+                                      fontSize: 25,
+                                      fontWeight: FontWeight.w700)))),
+                    ]),
+                    const SizedBox(height: 8),
+                    Text(summary[i].$3,
+                        style: const TextStyle(
+                            fontSize: 12, color: AppTheme.muted)),
+                  ])),
+      ],
+    );
+  }
+
+  Widget _recentApplication(Map<String, dynamic> app) {
+    final terms = app['terms'] as Map;
+    final applicant = app['applicant'] as String;
+    return TouchSurface(
+      key: ValueKey('recent-application-${app['id']}'),
+      onTap: () => open(app),
+      child: Padding(
+          padding: const EdgeInsets.all(16),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              CircleAvatar(
+                  radius: 18,
+                  backgroundColor: AppTheme.neutral,
+                  foregroundColor: AppTheme.primary,
+                  child: Text(applicant.isEmpty ? '?' : applicant[0],
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600))),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text(
+                        user.role == UserRole.client
+                            ? app['purpose'] as String
+                            : applicant,
+                        style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 3),
+                    Text(
+                        user.role == UserRole.client
+                            ? 'Solicitud de crédito'
+                            : app['purpose'] as String,
+                        style: const TextStyle(
+                            fontSize: 12, color: AppTheme.muted)),
+                  ])),
+              const SizedBox(width: 8),
+              const Icon(Icons.arrow_outward_rounded,
+                  size: 18, color: AppTheme.primary),
+            ]),
+            const SizedBox(height: 12),
+            Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(money.format(terms['principal']),
+                      style: const TextStyle(
+                          fontSize: 23,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -.5)),
+                  _pill(Icons.schedule_rounded, '${terms['months']} meses'),
+                  CreditStatusBadge(status: app['status'] as String),
+                ]),
+            if (app['status'] == 'approved') ...[
+              const SizedBox(height: 8),
+              Text(service.lifecycle(app).label,
+                  style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+            ],
+          ])),
+    );
+  }
+
+  Widget overview() {
+    final apps = applications;
+    final client = user.role == UserRole.client;
+    final manager = user.role == UserRole.manager;
+    final pending = apps.where((a) => a['status'] == stage).toList();
+    final featured = client
+        ? (apps.isEmpty ? null : apps.first)
+        : (pending.isEmpty ? null : pending.first);
     final hero = FinanceCard(
         child:
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Row(children: [
-        const IconMedallion(Icons.account_balance_wallet_outlined,
-            accent: true),
+        const IconMedallion(Icons.account_balance_wallet_outlined),
         const SizedBox(width: 12),
         Expanded(
-            child: Text(
-                manager
-                    ? 'Tu cartera'
-                    : client
-                        ? 'Tu próximo paso'
-                        : 'Tu bandeja',
+            child: Text(client ? 'Tu próximo paso' : 'Tu bandeja',
                 style: const TextStyle(
                     fontWeight: FontWeight.w600, fontSize: 14))),
         if (client && featured != null)
@@ -315,13 +476,11 @@ class _CreditWorkspaceState extends State<CreditWorkspace> {
       ]),
       const SizedBox(height: 16),
       Text(
-          manager
-              ? 'Disponible para prestar'
-              : featured != null
-                  ? featured['purpose'] as String
-                  : client
-                      ? 'Dale forma a tu próximo proyecto.'
-                      : 'Decisiones pendientes',
+          featured != null
+              ? featured['purpose'] as String
+              : client
+                  ? 'Dale forma a tu próximo proyecto.'
+                  : 'Decisiones pendientes',
           style: TextStyle(
               fontSize: client && featured == null ? 28 : 14,
               fontWeight: client && featured == null
@@ -330,15 +489,12 @@ class _CreditWorkspaceState extends State<CreditWorkspace> {
               height: 1.2,
               color: client && featured == null ? AppTheme.ink : AppTheme.muted,
               letterSpacing: client && featured == null ? -.9 : 0)),
-      if (manager || featured != null || !client) ...[
+      if (featured != null || !client) ...[
         const SizedBox(height: 8),
         Text(
-            manager
-                ? money.format(
-                    PortfolioLedger.availableCash(service.db.readPortfolio()))
-                : featured != null
-                    ? money.format((featured['terms'] as Map)['principal'])
-                    : '${pending.length}',
+            featured != null
+                ? money.format((featured['terms'] as Map)['principal'])
+                : '${pending.length}',
             style: const TextStyle(
                 fontSize: 42,
                 height: 1.1,
@@ -379,47 +535,6 @@ class _CreditWorkspaceState extends State<CreditWorkspace> {
             onPressed: () => open(featured),
             child: const Text('Ver mi solicitud')),
     ]));
-    Widget metrics({required bool vertical}) => FinanceGrid(
-        columns: vertical ? 1 : 3,
-        minItemWidth: 76,
-        children: summary
-            .map((item) => FinanceCard(
-                padding: const EdgeInsets.all(17),
-                child: vertical
-                    ? Row(children: [
-                        IconMedallion(item.$1),
-                        const SizedBox(width: 14),
-                        Expanded(
-                            child: Text(item.$3,
-                                style: const TextStyle(
-                                    color: AppTheme.muted, fontSize: 13))),
-                        Text(item.$2,
-                            style: const TextStyle(
-                                fontSize: 28, fontWeight: FontWeight.w700)),
-                      ])
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                            Icon(item.$1, size: 19, color: AppTheme.muted),
-                            const SizedBox(height: 11),
-                            Text(item.$2,
-                                style: const TextStyle(
-                                    fontSize: 28,
-                                    fontWeight: FontWeight.w700,
-                                    height: 1.1)),
-                            const SizedBox(height: 5),
-                            ConstrainedBox(
-                                constraints: BoxConstraints(
-                                    minHeight: MediaQuery.textScalerOf(context)
-                                            .scale(11) *
-                                        2.6),
-                                child: Text(item.$3,
-                                    style: const TextStyle(
-                                        color: AppTheme.muted,
-                                        fontSize: 11,
-                                        height: 1.3))),
-                          ])))
-            .toList());
     return ListView(
         padding: EdgeInsets.fromLTRB(
             22, 24, 22, 24 + MediaQuery.paddingOf(context).bottom),
@@ -427,37 +542,8 @@ class _CreditWorkspaceState extends State<CreditWorkspace> {
         children: [
           heading(client ? 'Tu próximo paso.' : 'Tu día, en orden.',
               'Hola, ${user.name}.'),
-          Reveal(
-              child: LayoutBuilder(
-                  builder: (context, box) => box.maxWidth >= 720
-                      ? Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                              Expanded(flex: 2, child: hero),
-                              const SizedBox(width: 16),
-                              Expanded(child: metrics(vertical: true))
-                            ])
-                      : Column(children: [
-                          hero,
-                          const SizedBox(height: 14),
-                          metrics(vertical: false)
-                        ]))),
-          const SizedBox(height: 18),
-          if (manager)
-            FinanceGrid(minItemWidth: 140, children: [
-              _quickAction('Abrir cartera', 'Clientes y préstamos',
-                  Icons.account_balance_wallet_outlined, _openPortfolio,
-                  compact: true),
-              _quickAction(
-                  'Cobros de hoy',
-                  'Consulta los vencimientos',
-                  Icons.today_outlined,
-                  () => Navigator.push(
-                      context,
-                      MaterialPageRoute<void>(
-                          builder: (_) => const TodaysCollectionsScreen())),
-                  compact: true),
-            ]),
+          Reveal(child: manager ? _portfolioSummary(featured) : hero),
+          const SizedBox(height: 8),
           SectionHeading(client ? 'Tus solicitudes' : 'Solicitudes recientes',
               action: TextButton(
                   onPressed: () => select(1), child: const Text('Ver todas'))),
@@ -470,7 +556,10 @@ class _CreditWorkspaceState extends State<CreditWorkspace> {
                 Icons.description_outlined,
                 () => select(1))
           else
-            _applicationsGrid(apps.take(3).toList()),
+            FinanceGrid(
+                minItemWidth: 290,
+                columns: 2,
+                children: apps.take(3).map(_recentApplication).toList()),
         ]);
   }
 
@@ -507,6 +596,8 @@ class _CreditWorkspaceState extends State<CreditWorkspace> {
           heading(
               user.role == UserRole.client ? 'Mis solicitudes' : 'Solicitudes',
               'Cada proyecto tiene su próximo paso.'),
+          _requestSummary(apps),
+          const SizedBox(height: 16),
           if (user.role == UserRole.client) ...[
             Align(
                 alignment: Alignment.centerLeft,
@@ -660,7 +751,8 @@ class _CreditWorkspaceState extends State<CreditWorkspace> {
             card(Row(children: [
               CircleAvatar(
                   radius: 26,
-                  backgroundColor: AppTheme.lavender,
+                  backgroundColor: AppTheme.neutral,
+                  foregroundColor: AppTheme.primary,
                   child: Text(user.name.isEmpty ? '?' : user.name[0])),
               const SizedBox(width: 16),
               Expanded(
@@ -747,6 +839,11 @@ class _CreditWorkspaceState extends State<CreditWorkspace> {
     if (widget.embedded) return content;
     return RoleShell(
         index: tab,
+        selectedIcons: const [
+          Icons.home_rounded,
+          Icons.description_rounded,
+          Icons.person_rounded
+        ],
         labels: [
           'Inicio',
           user.role == UserRole.client ? 'Mis solicitudes' : 'Bandeja',

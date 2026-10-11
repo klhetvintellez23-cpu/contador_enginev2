@@ -80,7 +80,7 @@ class _InstallmentSimulatorScreenState
   Widget build(BuildContext context) {
     final schedule = _schedule;
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FD),
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
         title: const Text('Simular cuotas'),
         backgroundColor: AppTheme.background,
@@ -199,7 +199,7 @@ class _InstallmentSimulatorScreenState
               if (schedule != null) ...[
                 const SizedBox(height: 20),
                 Card(
-                  color: const Color(0xFFF0EBFC),
+                  color: Colors.white,
                   child: Padding(
                     padding: const EdgeInsets.all(18),
                     child: Column(

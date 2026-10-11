@@ -216,7 +216,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                                   style: AppFonts.inter(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
-                                    color: const Color(0xFF1E293B),
+                                    color: AppTheme.ink,
                                   ),
                                 ),
                                 const SizedBox(height: 4),

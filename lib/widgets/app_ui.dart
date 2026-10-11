@@ -117,7 +117,7 @@ class _TabContentState extends State<TabContent>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.index != widget.index &&
         !MediaQuery.disableAnimationsOf(context)) {
-      _motion.forward(from: 0);
+      _motion.forward(from: _motion.isAnimating ? _motion.value : 0);
     }
   }
 
@@ -161,8 +161,8 @@ class _TouchSurfaceState extends State<TouchSurface> {
         curve: Curves.easeOutCubic,
         child: Material(
           color: Colors.white,
-          elevation: 1.2,
-          shadowColor: AppTheme.ink.withValues(alpha: .08),
+          elevation: 1.5,
+          shadowColor: Colors.black.withValues(alpha: .08),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
           clipBehavior: Clip.antiAlias,

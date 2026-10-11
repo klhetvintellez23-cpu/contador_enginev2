@@ -146,7 +146,7 @@ class _RotatingLogoScreenState extends State<RotatingLogoScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FD),
+      backgroundColor: AppTheme.background,
       body: Center(
         child: ScaleTransition(
           scale: _scaleAnimation,
