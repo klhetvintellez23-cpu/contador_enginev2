@@ -1,3 +1,4 @@
+import 'support/panama_contract_fixture.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
@@ -56,7 +57,8 @@ void main() {
         .instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null));
     final id = await approved();
-    await service.formalize(id, 'customer', 'Acuerdo firmado');
+    await service.formalize(id, 'customer', 'Acuerdo firmado',
+        contract: testPanamaContract);
     await service.disburse(id, DateTime.now(), 'Entrega 001');
     await service.pay(id, 100, 'Recibo 001');
     final loan = LoanTransaction(
@@ -98,18 +100,24 @@ void main() {
     expect(PortfolioLedger.availableCash(db.readSnapshot()), 2000);
     await expectLater(service.pay(id, 100, 'recibo'), throwsStateError);
     await expectLater(
-        service.formalize(id, 'missing', 'acuerdo'), throwsArgumentError);
-    await service.formalize(id, 'customer', 'acuerdo-firmado');
+        service.formalize(id, 'missing', 'acuerdo',
+            contract: testPanamaContract),
+        throwsArgumentError);
+    await service.formalize(id, 'customer', 'acuerdo-firmado',
+        contract: testPanamaContract);
     expect(service.lifecycle(app), CreditLifecycle.formalized);
     expect(PortfolioLedger.availableCash(db.readSnapshot()), 2000);
     await expectLater(service.pay(id, 100, 'recibo'), throwsStateError);
     await expectLater(
-        service.formalize(id, 'customer', 'acuerdo-firmado'), throwsStateError);
+        service.formalize(id, 'customer', 'acuerdo-firmado',
+            contract: testPanamaContract),
+        throwsStateError);
   });
   test('Desembolso único, plan efectivo, pagos, anulación y capital compartido',
       () async {
     final id = await approved();
-    await service.formalize(id, 'customer', 'acuerdo-firmado');
+    await service.formalize(id, 'customer', 'acuerdo-firmado',
+        contract: testPanamaContract);
     final now = DateTime.now();
     await Future.wait([
       service.disburse(id, now, 'entrega-1'),
@@ -150,7 +158,8 @@ void main() {
       'Capital insuficiente revierte toda la activación y preserva la formalización',
       () async {
     final id = await approved();
-    await service.formalize(id, 'customer', 'acuerdo-firmado');
+    await service.formalize(id, 'customer', 'acuerdo-firmado',
+        contract: testPanamaContract);
     await db.saveSetting('initial_capital', '500');
     final before = jsonEncode(db.readSnapshot());
     await expectLater(
@@ -161,13 +170,16 @@ void main() {
     await expectLater(
         service.disburse(id, DateTime.now(), 'entrega-1'), throwsStateError);
     await expectLater(
-        service.formalize(id, 'customer', 'acuerdo-firmado'), throwsStateError);
+        service.formalize(id, 'customer', 'acuerdo-firmado',
+            contract: testPanamaContract),
+        throwsStateError);
   });
   test(
       'Respaldo v3 conserva activación y rechaza plan alterado o crédito duplicado',
       () async {
     final id = await approved();
-    await service.formalize(id, 'customer', 'acuerdo-firmado');
+    await service.formalize(id, 'customer', 'acuerdo-firmado',
+        contract: testPanamaContract);
     await service.disburse(id, DateTime.now(), 'entrega-1');
     await service.pay(id, 100, 'recibo-1');
     final backup = jsonDecode(jsonEncode(db.exportBusinessBackup()))
@@ -191,6 +203,8 @@ void main() {
   test(
       'Crédito anterior mantiene plan y pagos; conciliación explícita sin doble caja',
       () async {
+    const historicalTerms = CreditTerms(
+        principal: 1000, annualRate: 12, months: 12, policyVersion: 1);
     final start = DateTime.now().subtract(const Duration(days: 50));
     await db.transaction('fixture:anterior', (s) {
       s['applications'] = [
@@ -200,13 +214,14 @@ void main() {
           'applicant': 'Solicitante',
           'purpose': 'Crédito anterior',
           'status': 'approved',
-          'terms': terms.toMap(),
+          'terms': historicalTerms.toMap(),
           'profile': const FinancialProfile(
                   income: 2000, expenses: 600, debtPayments: 100)
               .toMap(),
           'approvedAt': start.toIso8601String(),
-          'schedule':
-              CreditEngine.schedule(terms, start).map((r) => r.toMap()).toList()
+          'schedule': CreditEngine.schedule(historicalTerms, start)
+              .map((r) => r.toMap())
+              .toList()
         }
       ];
       s['credit_payments'] = [

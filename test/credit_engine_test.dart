@@ -38,7 +38,9 @@ void main() {
   });
   test('Mora única, pagos parciales, corte histórico y exceso', () {
     final plan = CreditEngine.schedule(
-            const CreditTerms(principal: 100, annualRate: 0, months: 1), start)
+            const CreditTerms(
+                principal: 100, annualRate: 0, months: 1, policyVersion: 1),
+            start)
         .map((r) => r.toMap())
         .toList();
     final payment = {'amountCents': 4000, 'date': '2026-03-01T12:00:00'};

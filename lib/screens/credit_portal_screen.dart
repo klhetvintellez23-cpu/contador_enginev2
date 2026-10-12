@@ -14,6 +14,9 @@ import '../widgets/finance_ui.dart';
 import '../widgets/credit_overview.dart';
 import '../utils/shared_styles.dart';
 import 'credit_activation_screen.dart';
+import 'credit_settlement_screen.dart';
+import '../widgets/feci_fields.dart';
+import '../widgets/credit_conditions.dart';
 
 class CreditPortalScreen extends StatelessWidget {
   final bool embedded;
@@ -372,7 +375,22 @@ class _CreditDetailScreenState extends State<CreditDetailScreen> {
                                   : 'Saldo contractual: USD ${(total / 100).toStringAsFixed(2)}',
                               style: Theme.of(context).textTheme.titleLarge),
                           const Text(
-                              'Las cuotas incluyen cargos pactados. Los anticipos adelantan cuotas completas o parciales; esta simulación no recalcula intereses por prepago.'),
+                              'El saldo contractual incluye cuotas futuras. Para terminar el préstamo, usa Cancelar préstamo y revisa el descuento de intereses futuros.'),
+                          if (role == UserRole.manager &&
+                              lifecycle == CreditLifecycle.active &&
+                              service.account(widget.id)?['settlement'] == null)
+                            OutlinedButton.icon(
+                                icon: const Icon(Icons.task_alt),
+                                label: const Text('Cancelar préstamo'),
+                                onPressed: busy
+                                    ? null
+                                    : () => run(() => Navigator.push(
+                                        context,
+                                        MaterialPageRoute<void>(
+                                            builder: (_) =>
+                                                CreditSettlementScreen(
+                                                    applicationId:
+                                                        widget.id))))),
                           if (role == UserRole.manager &&
                               total > 0 &&
                               lifecycle == CreditLifecycle.active)
@@ -417,6 +435,7 @@ class _CreditDetailScreenState extends State<CreditDetailScreen> {
                                       'principalCents': 'Capital',
                                       'interestCents': 'Interés',
                                       'insuranceCents': 'Seguro',
+                                      'feciCents': 'FECI',
                                       'feeCents': 'Comisión',
                                       'lateCents': 'Mora'
                                     }.entries)
@@ -426,7 +445,7 @@ class _CreditDetailScreenState extends State<CreditDetailScreen> {
                                           child: Row(children: [
                                             Expanded(child: Text(item.value)),
                                             Text(
-                                                'USD ${((r[item.key] as num) / 100).toStringAsFixed(2)}'),
+                                                'USD ${((r[item.key] as num? ?? 0) / 100).toStringAsFixed(2)}'),
                                           ])),
                                   ],
                                 ))))
@@ -440,6 +459,7 @@ class _CreditDetailScreenState extends State<CreditDetailScreen> {
                                       'Capital',
                                       'Interés',
                                       'Seguro',
+                                      'FECI',
                                       'Comisión',
                                       'Mora',
                                       'Pendiente'
@@ -456,11 +476,12 @@ class _CreditDetailScreenState extends State<CreditDetailScreen> {
                                                 'principalCents',
                                                 'interestCents',
                                                 'insuranceCents',
+                                                'feciCents',
                                                 'feeCents',
                                                 'lateCents',
                                                 'remainingCents'
                                               ].map((k) => DataCell(Text(
-                                                  ((r[k] as num) / 100)
+                                                  ((r[k] as num? ?? 0) / 100)
                                                       .toStringAsFixed(2)))),
                                             ]))
                                         .toList())),
@@ -469,7 +490,7 @@ class _CreditDetailScreenState extends State<CreditDetailScreen> {
                               style: Theme.of(context).textTheme.titleLarge),
                           ...service.payments(widget.id).map((p) => ListTile(
                               title: Text(
-                                  '${p['reference']} · USD ${((p['amountCents'] as num) / 100).toStringAsFixed(2)}'),
+                                  '${p['reference']} · ${p['direction'] == 'refund' ? 'Devolución' : 'Cobro'} USD ${((p['amountCents'] as num) / 100).toStringAsFixed(2)}'),
                               subtitle: Text(
                                   '${p['date']} · ${p['voided'] == true ? 'Anulado: ${p['voidReason']}' : 'Registrado'}'),
                               trailing: role == UserRole.manager &&
@@ -517,7 +538,9 @@ class _CreditDetailScreenState extends State<CreditDetailScreen> {
 
 class CreditApplicationForm extends StatefulWidget {
   final Map<String, dynamic>? application;
-  const CreditApplicationForm({super.key, this.application});
+  final bool managed;
+  const CreditApplicationForm(
+      {super.key, this.application, this.managed = false});
   @override
   State<CreditApplicationForm> createState() => _CreditApplicationFormState();
 }
@@ -526,6 +549,8 @@ class _CreditApplicationFormState extends State<CreditApplicationForm> {
   final fields = <String, TextEditingController>{};
   final form = GlobalKey<FormState>();
   AmortizationMethod method = AmortizationMethod.french;
+  FeciTreatment feciTreatment = FeciTreatment.pending;
+  String feciEvidence = '';
   int step = 0;
   bool finished = false;
   String? error;
@@ -539,7 +564,7 @@ class _CreditApplicationFormState extends State<CreditApplicationForm> {
     'debtPayments': 'Cuotas de otras deudas (USD)',
     'monthlyInsurance': 'Seguro mensual (USD)',
     'openingFee': 'Comisión inicial (USD)',
-    'lateFee': 'Mora única por cuota vencida (USD)',
+    'lateFee': 'Mora única sobre capital vencido (%)',
   };
   @override
   void initState() {
@@ -560,6 +585,11 @@ class _CreditApplicationFormState extends State<CreditApplicationForm> {
       fields[key] = TextEditingController(text: values[key]?.toString() ?? '');
     }
     if (a != null) {
+      feciTreatment = FeciTreatment.values
+          .byName((a['terms'] as Map)['feciTreatment'] as String? ?? 'pending');
+      feciEvidence = (a['terms'] as Map)['feciEvidence'] as String? ?? '';
+      fields['lateFee']!.text =
+          ((a['terms'] as Map)['lateFeePercent'] ?? 0).toString();
       method = AmortizationMethod.values
           .byName((a['terms'] as Map)['method'] as String);
     }
@@ -582,7 +612,9 @@ class _CreditApplicationFormState extends State<CreditApplicationForm> {
       method: method,
       monthlyInsurance: number('monthlyInsurance'),
       openingFee: number('openingFee'),
-      lateFee: number('lateFee'));
+      lateFeePercent: number('lateFee'),
+      feciTreatment: feciTreatment,
+      feciEvidence: feciEvidence);
   FinancialProfile get profile => FinancialProfile(
       income: number('income'),
       expenses: number('expenses'),
@@ -609,6 +641,7 @@ class _CreditApplicationFormState extends State<CreditApplicationForm> {
     if (finished) return;
     try {
       terms.validate();
+      if (send || widget.managed) terms.validateForContract();
       profile.validate();
       if (fields['purpose']!.text.trim().length < 5) {
         throw ArgumentError('Explica el destino del crédito.');
@@ -704,8 +737,9 @@ class _CreditApplicationFormState extends State<CreditApplicationForm> {
                         usd((terms.monthlyInsurance * 100).round())),
                     value('Comisión inicial',
                         usd((terms.openingFee * 100).round())),
-                    value('Mora por cuota vencida',
-                        usd((terms.lateFee * 100).round())),
+                    value('Mora sobre capital vencido',
+                        '${terms.lateFeePercent}%'),
+                    CreditConditions(terms: terms),
                   ]))),
       const SizedBox(height: 18),
       ExpansionTile(
@@ -721,7 +755,7 @@ class _CreditApplicationFormState extends State<CreditApplicationForm> {
           ]),
       const SizedBox(height: 18),
       const Text(
-          'Las fechas finales se fijan al registrar el desembolso. Los anticipos cubren cuotas y no recalculan intereses en el motor actual. Enviar la solicitud no garantiza aprobación ni entrega de fondos.',
+          'Las fechas finales se fijan al registrar el desembolso. La cancelación total descuenta intereses futuros y no tiene penalización. Enviar la solicitud no garantiza aprobación ni entrega de fondos.',
           style: TextStyle(color: AppTheme.muted, height: 1.5)),
     ]);
   }
@@ -735,9 +769,11 @@ class _CreditApplicationFormState extends State<CreditApplicationForm> {
     ];
     return Scaffold(
         appBar: AppBar(
-            title: Text(widget.application == null
-                ? 'Solicitar préstamo'
-                : 'Corregir solicitud'),
+            title: Text(widget.managed
+                ? 'Condiciones del nuevo crédito'
+                : widget.application == null
+                    ? 'Solicitar préstamo'
+                    : 'Corregir solicitud'),
             leading: BackButton(
                 onPressed: () => step > 0
                     ? setState(() => step--)
@@ -816,6 +852,14 @@ class _CreditApplicationFormState extends State<CreditApplicationForm> {
                                           setState(() => method = value!)),
                                   field('annualRate'),
                                   const SizedBox(height: 16),
+                                  FeciFields(
+                                      treatment: feciTreatment,
+                                      evidence: feciEvidence,
+                                      onChanged: (treatment, evidence) =>
+                                          setState(() {
+                                            feciTreatment = treatment;
+                                            feciEvidence = evidence;
+                                          })),
                                   ExpansionTile(
                                       tilePadding: EdgeInsets.zero,
                                       maintainState: true,
@@ -851,10 +895,12 @@ class _CreditApplicationFormState extends State<CreditApplicationForm> {
                           : () => submit(widget.application == null),
                   child: Text(step < 2
                       ? 'Continuar'
-                      : widget.application == null
-                          ? 'Enviar solicitud'
-                          : 'Guardar corrección')),
-              if (step == 2 && widget.application == null)
+                      : widget.managed
+                          ? 'Aprobar condiciones y formalizar'
+                          : widget.application == null
+                              ? 'Enviar solicitud'
+                              : 'Guardar corrección')),
+              if (step == 2 && widget.application == null && !widget.managed)
                 TextButton(
                     onPressed: finished ? null : () => submit(false),
                     child: const Text('Guardar como borrador')),

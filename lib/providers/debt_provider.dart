@@ -102,7 +102,9 @@ class DebtProvider with ChangeNotifier {
           .map((p) => Payment(
               id: p['id'],
               loanId: p['accountId'],
-              amount: (p['amountCents'] as int) / 100,
+              amount: (p['direction'] == 'refund' ? -1 : 1) *
+                  (p['amountCents'] as int) /
+                  100,
               date: DateTime.parse(p['date'] as String)))
     ];
   }
@@ -504,9 +506,13 @@ class DebtProvider with ChangeNotifier {
                 !DateTime.parse(p['date'] as String).isBefore(todayStart))
             .toList();
         paymentCount += payments.length;
-        totalCollectedToday +=
-            payments.fold<int>(0, (sum, p) => sum + (p['amountCents'] as int)) /
-                100;
+        totalCollectedToday += payments.fold<int>(
+                0,
+                (sum, p) =>
+                    sum +
+                    (p['direction'] == 'refund' ? -1 : 1) *
+                        (p['amountCents'] as int)) /
+            100;
         final balance = PortfolioLedger.accountBalance(snapshot, account);
         final previous = PortfolioLedger.accountBalance(snapshot, account,
             asOf: todayStart.subtract(const Duration(microseconds: 1)));

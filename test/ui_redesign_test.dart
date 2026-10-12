@@ -226,7 +226,8 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
-  testWidgets('El nuevo formulario conserva creación y validación del préstamo',
+  testWidgets(
+      'La originación exige condiciones y conserva los cobros históricos',
       (tester) async {
     tester.view.physicalSize = const Size(430, 1000);
     tester.view.devicePixelRatio = 1;
@@ -240,28 +241,61 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Nuevo préstamo'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Crear préstamo'));
-    await tester.pumpAndSettle();
-    expect(find.text('Ingresa el monto.'), findsOneWidget);
-    await tester.tap(find.text('Seleccionar cliente'));
+    expect(
+        tester
+            .widget<FilledButton>(
+                find.widgetWithText(FilledButton, 'Definir condiciones'))
+            .onPressed,
+        isNull);
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Ana Martínez').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Definir condiciones'));
     await tester.pumpAndSettle();
     final fields = find.byType(TextFormField);
     await tester.enterText(fields.at(0), '250');
     await tester.enterText(fields.at(1), 'Prueba de interfaz');
-    await tester.enterText(fields.at(2), '5');
-    await tester.ensureVisible(find.text('Crear préstamo'));
+    await tester.ensureVisible(find.text('Continuar'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Continuar'));
+    await tester.pumpAndSettle();
+    await tester.enterText(fields.at(0), '2000');
+    await tester.enterText(fields.at(1), '600');
+    await tester.enterText(fields.at(2), '0');
+    await tester.ensureVisible(find.text('Continuar'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Continuar'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+        find.text('Aprobar condiciones y formalizar'), 250,
+        scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
     await tester.runAsync(() async {
-      await tester.tap(find.text('Crear préstamo'));
+      await tester.tap(find.text('Aprobar condiciones y formalizar'));
       await Future<void>.delayed(const Duration(milliseconds: 150));
     });
     await tester.pumpAndSettle();
-    expect(provider.allLoans, hasLength(4));
-    expect(provider.allLoans.last.title, 'Prueba de interfaz');
+    expect(provider.allLoans, hasLength(3));
+    await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 500)));
+    await tester.pumpAndSettle();
+    expect(db.readWorkflow()['applications'], isNotEmpty,
+        reason: tester
+            .widgetList<Text>(find.byType(Text))
+            .map((w) => w.data)
+            .join(' | '));
+    expect((db.readWorkflow()['applications'] as List).single['purpose'],
+        'Prueba de interfaz');
+    expect((db.readWorkflow()['credit_accounts'] as List), isEmpty);
+    await tester.pageBack();
+    await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)));
     await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Ana Martínez'));
+    await tester.scrollUntilVisible(find.text('Ana Martínez'), 250,
+        scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Ana Martínez'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Registrar cobro').first);

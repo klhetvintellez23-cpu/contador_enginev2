@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:hive/hive.dart';
+import 'package:uuid/uuid.dart';
 import 'totp_service.dart';
 import 'prototype_verification_code.dart';
 import '../models/credit_engine.dart';
 import '../models/credit_account.dart';
+import '../models/panama_credit.dart';
 
 enum UserRole { client, analyst, compliance, manager }
 
@@ -534,6 +536,31 @@ class LocalDatabaseService {
 
   Future<void> insertCustomer(Map<String, dynamic> data) =>
       _insert('customers', data);
+  Future<String> registerCustomer(
+          {required String name,
+          required String identification,
+          String? phone}) =>
+      transaction('crear:customers', (s) {
+        String identityKey(String value) =>
+            value.toUpperCase().replaceAll(RegExp(r'[\s-]'), '');
+        final identity = identityKey(identification);
+        if (name.trim().isEmpty || identity.isEmpty) {
+          throw ArgumentError('Completa el nombre y la identificación.');
+        }
+        if (rowsOf(s, 'customers').any(
+            (c) => identityKey(c['cedula']?.toString() ?? '') == identity)) {
+          throw StateError(
+              'Esta identificación ya está registrada. Cancela y selecciona al cliente de la lista.');
+        }
+        final id = const Uuid().v4();
+        _putRow(s, 'customers', {
+          'id': id,
+          'name': name.trim(),
+          'cedula': identification.trim(),
+          'phone': phone?.trim(),
+        });
+        return id;
+      });
   Future<void> updateCustomer(String id, Map<String, dynamic> data) =>
       _update('customers', id, data);
   Future<void> deleteCustomer(String id) =>
@@ -789,7 +816,7 @@ class LocalDatabaseService {
               !rowsOf(incoming, 'customers')
                   .any((c) => c['id'].toString() == record['customerId']) ||
               !['formalized', 'active'].contains(record['status']) ||
-              record['termsVersion'] != 1 ||
+              ![1, 2].contains(record['termsVersion']) ||
               record['legacy'] is! bool ||
               record['acceptanceReference'] is! String ||
               (record['acceptanceReference'] as String).trim().length < 5) {
@@ -797,6 +824,12 @@ class LocalDatabaseService {
           }
           final terms = CreditTerms.fromMap(
               Map<String, dynamic>.from(record['terms'] as Map));
+          if (record['termsVersion'] == 2) {
+            PanamaContract.validateSnapshot(
+                Map<String, dynamic>.from(record['contract'] as Map), terms);
+          } else if (record['contract'] != null || terms.policyVersion != 1) {
+            throw ArgumentError('Versión contractual inconsistente.');
+          }
           if (jsonEncode(terms.toMap()) !=
               jsonEncode(CreditTerms.fromMap(
                       Map<String, dynamic>.from(app['terms'] as Map))
@@ -851,6 +884,48 @@ class LocalDatabaseService {
                 (!openingIncluded && record['cashPaymentBaselineCents'] != 0)) {
               throw ArgumentError('Movimiento de desembolso alterado.');
             }
+            final settlement = record['settlement'];
+            if (settlement != null) {
+              if (settlement is! Map) {
+                throw ArgumentError('Liquidación inválida.');
+              }
+              final payment = rowsOf(incoming, 'credit_payments')
+                  .where((p) => p['id'] == settlement['paymentId'])
+                  .firstOrNull;
+              if (payment == null ||
+                  payment['voided'] == true ||
+                  payment['kind'] != 'settlement' ||
+                  payment['applicationId'] != app['id'] ||
+                  payment['date'] != settlement['date']) {
+                throw ArgumentError(
+                    'Cancelación sin movimiento de caja válido.');
+              }
+              final expectedSettlement = CreditSettlement.quote(
+                  terms: terms,
+                  schedule: rowsOf(record, 'schedule'),
+                  payments: rowsOf(incoming, 'credit_payments')
+                      .where((p) =>
+                          p['applicationId'] == app['id'] &&
+                          p['id'] != payment['id'])
+                      .toList(),
+                  start: disbursed,
+                  at: DateTime.parse(settlement['date'] as String));
+              final body = Map<String, dynamic>.from(settlement)
+                ..remove('paymentId')
+                ..remove('actor');
+              final net = expectedSettlement['netCents'] as int;
+              if (PanamaContract.digest(body) !=
+                      PanamaContract.digest(expectedSettlement) ||
+                  payment['amountCents'] != net.abs() ||
+                  payment['direction'] != (net < 0 ? 'refund' : 'receipt') ||
+                  rowsOf(incoming, 'credit_payments').any((p) =>
+                      p['applicationId'] == app['id'] &&
+                      p['voided'] != true &&
+                      DateTime.parse(p['date'] as String).isAfter(
+                          DateTime.parse(settlement['date'] as String)))) {
+                throw ArgumentError('Liquidación o devolución alterada.');
+              }
+            }
             PortfolioLedger.accountBalance(incoming, record);
           } else if (record['legacy'] == true ||
               rowsOf(record, 'schedule').isNotEmpty ||
@@ -865,7 +940,7 @@ class LocalDatabaseService {
           if (!ids.contains(p['applicationId']) ||
               !paymentIds.add(p['id'] as String) ||
               p['amountCents'] is! int ||
-              (p['amountCents'] as int) <= 0 ||
+              (p['amountCents'] as int) < (p['kind'] == 'settlement' ? 0 : 1) ||
               DateTime.parse(p['date'] as String).isAfter(DateTime.now())) {
             throw ArgumentError('Pago inválido en el respaldo.');
           }
@@ -873,6 +948,14 @@ class LocalDatabaseService {
           final record = accounts
               .where((a) => a['applicationId'] == p['applicationId'])
               .firstOrNull;
+          if (![null, 'receipt', 'refund'].contains(p['direction']) ||
+              ![null, 'settlement'].contains(p['kind']) ||
+              (p['direction'] == 'refund' && p['kind'] != 'settlement') ||
+              (p['kind'] == 'settlement' &&
+                  p['voided'] != true &&
+                  (record?['settlement'] as Map?)?['paymentId'] != p['id'])) {
+            throw ArgumentError('Movimiento de cancelación sin liquidación.');
+          }
           if (app['status'] != 'approved' ||
               p['reference'] is! String ||
               (p['reference'] as String).trim().length < 3 ||

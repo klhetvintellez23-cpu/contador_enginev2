@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/credit_engine.dart';
 import '../utils/app_theme.dart';
+import '../widgets/feci_fields.dart';
 
 /// Consulta el motor de amortización sin modificar la cartera ni el formulario.
 class InstallmentSimulatorScreen extends StatefulWidget {
@@ -23,6 +24,9 @@ class _InstallmentSimulatorScreenState
   final _currency = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
   AmortizationMethod _method = AmortizationMethod.french;
   List<ScheduledInstallment>? _schedule;
+  CreditTerms? _calculatedTerms;
+  FeciTreatment _feci = FeciTreatment.applies;
+  String _feciEvidence = '';
 
   @override
   void initState() {
@@ -48,8 +52,13 @@ class _InstallmentSimulatorScreenState
       annualRate: _number(_rate.text)!,
       months: int.parse(_months.text.trim()),
       method: _method,
+      feciTreatment: _feci,
+      feciEvidence: _feciEvidence,
     );
-    setState(() => _schedule = CreditEngine.schedule(terms, DateTime.now()));
+    setState(() {
+      _calculatedTerms = terms;
+      _schedule = CreditEngine.schedule(terms, DateTime.now());
+    });
     FocusScope.of(context).unfocus();
   }
 
@@ -187,10 +196,20 @@ class _InstallmentSimulatorScreenState
                         ),
                         const SizedBox(height: 20),
                         FilledButton.icon(
+                          key: const ValueKey('calculate-installments'),
                           onPressed: _calculate,
                           icon: const Icon(Icons.calculate_outlined),
                           label: const Text('Calcular cuotas'),
                         ),
+                        const SizedBox(height: 16),
+                        FeciFields(
+                            treatment: _feci,
+                            evidence: _feciEvidence,
+                            onChanged: (t, e) => setState(() {
+                                  _feci = t;
+                                  _feciEvidence = e;
+                                  _schedule = null;
+                                })),
                       ],
                     ),
                   ),
@@ -211,6 +230,14 @@ class _InstallmentSimulatorScreenState
                         const SizedBox(height: 10),
                         _metric(
                             'Primera cuota', _money(schedule.first.totalCents)),
+                        _metric('Tasa efectiva anual',
+                            '${CreditEngine.effectiveAnnualRate(_calculatedTerms!).toStringAsFixed(2)}%'),
+                        _metric('Costo efectivo anual con FECI',
+                            '${CreditEngine.effectiveAnnualRate(_calculatedTerms!, includeThirdParties: true).toStringAsFixed(2)}%'),
+                        _metric(
+                            'FECI total',
+                            _money(schedule.fold<int>(
+                                0, (s, r) => s + r.feciCents))),
                         _metric(
                             'Última cuota', _money(schedule.last.totalCents)),
                         _metric(
@@ -223,7 +250,8 @@ class _InstallmentSimulatorScreenState
                             _money(schedule.fold(
                                 0, (sum, row) => sum + row.totalCents))),
                         const SizedBox(height: 8),
-                        const Text('Sin seguros, comisiones ni mora.',
+                        const Text(
+                            'Sin seguros, comisiones ni mora. FECI según el supuesto seleccionado.',
                             style:
                                 TextStyle(fontSize: 12, color: AppTheme.muted)),
                         ExpansionTile(

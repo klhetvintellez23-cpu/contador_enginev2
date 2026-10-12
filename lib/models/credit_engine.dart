@@ -3,10 +3,16 @@ import 'transaction.dart';
 
 enum AmortizationMethod { french, german }
 
+enum FeciTreatment { pending, applies, exempt, outsideScope }
+
 class CreditTerms {
   final double principal, annualRate, monthlyInsurance, openingFee, lateFee;
   final int months;
   final AmortizationMethod method;
+  final int policyVersion;
+  final FeciTreatment feciTreatment;
+  final String feciEvidence;
+  final double lateFeePercent;
   const CreditTerms(
       {required this.principal,
       required this.annualRate,
@@ -14,9 +20,44 @@ class CreditTerms {
       this.method = AmortizationMethod.french,
       this.monthlyInsurance = 0,
       this.openingFee = 0,
-      this.lateFee = 0});
+      this.lateFee = 0,
+      this.policyVersion = 2,
+      this.feciTreatment = FeciTreatment.pending,
+      this.feciEvidence = '',
+      this.lateFeePercent = 0});
+  bool get chargesFeci =>
+      principal > 5000 && feciTreatment == FeciTreatment.applies;
+  void validateForContract() {
+    validate();
+    if (policyVersion != 2) {
+      throw ArgumentError(
+          'Actualiza las condiciones antes de formalizar un crédito nuevo.');
+    }
+    if (principal > 5000 &&
+        (feciTreatment == FeciTreatment.pending ||
+            (feciTreatment != FeciTreatment.applies &&
+                feciEvidence.trim().length < 10))) {
+      throw ArgumentError(
+          'Documenta la aplicación, exención o no sujeción al FECI.');
+    }
+    if (lateFee != 0) {
+      throw ArgumentError(
+          'Los créditos nuevos usan mora porcentual sobre capital vencido.');
+    }
+  }
+
   void validate() {
-    if (!principal.isFinite ||
+    if (policyVersion >= 2 &&
+        [principal, monthlyInsurance, openingFee, lateFee].any((v) =>
+            v.isFinite && (v * 100 - (v * 100).round()).abs() > .00001)) {
+      throw ArgumentError(
+          'Los importes monetarios admiten como máximo dos decimales.');
+    }
+    if (![1, 2].contains(policyVersion) ||
+        !lateFeePercent.isFinite ||
+        lateFeePercent < 0 ||
+        lateFeePercent > 100 ||
+        !principal.isFinite ||
         principal < 1 ||
         principal > 10000000 ||
         !annualRate.isFinite ||
@@ -38,7 +79,13 @@ class CreditTerms {
         'method': method.name,
         'monthlyInsurance': monthlyInsurance,
         'openingFee': openingFee,
-        'lateFee': lateFee
+        'lateFee': lateFee,
+        if (policyVersion >= 2) ...{
+          'policyVersion': policyVersion,
+          'feciTreatment': feciTreatment.name,
+          'feciEvidence': feciEvidence,
+          'lateFeePercent': lateFeePercent,
+        }
       };
   factory CreditTerms.fromMap(Map<String, dynamic> m) => CreditTerms(
       principal: (m['principal'] as num).toDouble(),
@@ -47,7 +94,12 @@ class CreditTerms {
       method: AmortizationMethod.values.byName(m['method'] as String),
       monthlyInsurance: (m['monthlyInsurance'] as num? ?? 0).toDouble(),
       openingFee: (m['openingFee'] as num? ?? 0).toDouble(),
-      lateFee: (m['lateFee'] as num? ?? 0).toDouble());
+      lateFee: (m['lateFee'] as num? ?? 0).toDouble(),
+      policyVersion: m['policyVersion'] as int? ?? 1,
+      feciTreatment: FeciTreatment.values
+          .byName(m['feciTreatment'] as String? ?? 'pending'),
+      feciEvidence: m['feciEvidence'] as String? ?? '',
+      lateFeePercent: (m['lateFeePercent'] as num? ?? 0).toDouble());
 }
 
 class ScheduledInstallment {
@@ -58,6 +110,8 @@ class ScheduledInstallment {
       feeCents,
       balanceCents;
   final DateTime due;
+  final int feciCents;
+  final int? lateFeeCents;
   const ScheduledInstallment(
       {required this.number,
       required this.due,
@@ -65,9 +119,11 @@ class ScheduledInstallment {
       required this.interestCents,
       required this.insuranceCents,
       required this.feeCents,
-      required this.balanceCents});
+      required this.balanceCents,
+      this.feciCents = 0,
+      this.lateFeeCents});
   int get totalCents =>
-      principalCents + interestCents + insuranceCents + feeCents;
+      principalCents + interestCents + insuranceCents + feeCents + feciCents;
   Map<String, dynamic> toMap() => {
         'number': number,
         'due': due.toIso8601String(),
@@ -76,7 +132,9 @@ class ScheduledInstallment {
         'insuranceCents': insuranceCents,
         'feeCents': feeCents,
         'balanceCents': balanceCents,
-        'totalCents': totalCents
+        'totalCents': totalCents,
+        if (lateFeeCents != null) 'lateFeeCents': lateFeeCents,
+        if (lateFeeCents != null || feciCents != 0) 'feciCents': feciCents,
       };
 }
 
@@ -92,6 +150,7 @@ class CreditEngine {
     int balance = initial;
     return List.generate(terms.months, (index) {
       final interest = (balance * rate).round();
+      final feci = terms.chargesFeci ? (balance / 1200).round() : 0;
       final principal = index == terms.months - 1
           ? balance
           : min(
@@ -108,6 +167,10 @@ class CreditEngine {
           interestCents: interest,
           insuranceCents: (terms.monthlyInsurance * 100).round(),
           feeCents: index == 0 ? (terms.openingFee * 100).round() : 0,
+          feciCents: feci,
+          lateFeeCents: terms.policyVersion >= 2
+              ? (principal * terms.lateFeePercent / 100).round()
+              : null,
           balanceCents: balance);
     });
   }
@@ -121,6 +184,7 @@ class CreditEngine {
       DateTime asOf) {
     if (lateFeeCents < 0) throw ArgumentError('Mora inválida.');
     for (final payment in payments) {
+      if (payment['voided'] == true) continue;
       if (payment['amountCents'] is! int ||
           (payment['amountCents'] as int) <= 0) {
         throw ArgumentError('El pago debe expresarse en centavos positivos.');
@@ -141,7 +205,21 @@ class CreditEngine {
         final d = DateTime.parse(row['due'] as String);
         if (DateTime(d.year, d.month, d.day).isBefore(day) &&
             (row['paidCents'] as int) < (row['totalCents'] as int)) {
-          row['lateCents'] = lateFeeCents;
+          // The charge is fixed once delinquency begins, on unpaid principal.
+          if ((row['lateCents'] as int) == 0) {
+            final charges =
+                (row['totalCents'] as int) - (row['principalCents'] as int);
+            final paidPrincipal = max(0, (row['paidCents'] as int) - charges);
+            final principal = row['principalCents'] as int;
+            row['lateCents'] = row.containsKey('lateFeeCents')
+                ? (principal == 0
+                    ? 0
+                    : ((row['lateFeeCents'] as int) *
+                            (principal - paidPrincipal) /
+                            principal)
+                        .round())
+                : lateFeeCents;
+          }
         }
       }
     }
@@ -170,13 +248,54 @@ class CreditEngine {
           (row['paidCents'] as int) -
           (row['latePaidCents'] as int);
       var paid = row['paidCents'] as int;
-      for (final component in ['fee', 'insurance', 'interest', 'principal']) {
-        final applied = min(paid, row['${component}Cents'] as int);
+      for (final component in [
+        'fee',
+        'insurance',
+        'feci',
+        'interest',
+        'principal'
+      ]) {
+        final applied = min(paid, row['${component}Cents'] as int? ?? 0);
         row['${component}PaidCents'] = applied;
         paid -= applied;
       }
     }
     return result;
+  }
+
+  /// Monthly IRR annualized with compounding. Third-party insurance and FECI
+  /// are disclosed separately; neither is revenue retained by the lender.
+  static double effectiveAnnualRate(CreditTerms terms,
+      {bool includeThirdParties = false}) {
+    final plan = schedule(terms, DateTime(2024, 1, 1));
+    final flows = plan
+        .map((r) => includeThirdParties
+            ? r.totalCents
+            : r.principalCents + r.interestCents + r.feeCents)
+        .toList();
+    final principal = (terms.principal * 100).round();
+    if (flows.fold<int>(0, (s, c) => s + c) == principal) return 0;
+    double npv(double rate) {
+      var value = -principal.toDouble();
+      for (var i = 0; i < flows.length; i++) {
+        value += flows[i] / pow(1 + rate, i + 1);
+      }
+      return value;
+    }
+
+    var low = 0.0, high = 1.0;
+    while (npv(high) > 0) {
+      high *= 2;
+    }
+    for (var i = 0; i < 180; i++) {
+      final mid = (low + high) / 2;
+      if (npv(mid) > 0) {
+        low = mid;
+      } else {
+        high = mid;
+      }
+    }
+    return (pow(1 + (low + high) / 2, 12) - 1) * 100;
   }
 }
 

@@ -16,6 +16,38 @@ void main() {
     await Hive.close();
     await directory.delete(recursive: true);
   });
+  test('Registrar cliente valida identidad, rol y duplicados concurrentes',
+      () async {
+    await db.signIn('cliente@contador.local', 'ContadorLocal2026!');
+    await expectLater(db.registerCustomer(name: 'Ana', identification: '8-1-2'),
+        throwsStateError);
+    await db.signIn('admin@contador.local', 'ContadorLocal2026!');
+    await expectLater(db.registerCustomer(name: 'Ana', identification: ' - '),
+        throwsArgumentError);
+    await expectLater(db.registerCustomer(name: ' ', identification: '8-1-2'),
+        throwsArgumentError);
+    final results = await Future.wait([
+      db.registerCustomer(
+          name: ' Ana ', identification: '8-1-2', phone: '+50761234567'),
+      db
+          .registerCustomer(name: 'Otra ficha', identification: '8 - 1 - 2')
+          .then<String>((_) => 'duplicado', onError: (Object e) {
+        expect(e, isA<StateError>());
+        return 'rechazado';
+      }),
+    ]);
+    expect(results.last, 'rechazado');
+    final customer = (await db.getCustomers()).single;
+    expect(customer['id'], results.first);
+    expect(customer['name'], 'Ana');
+    expect(customer['cedula'], '8-1-2');
+    expect(customer['phone'], '+50761234567');
+    await Hive.close();
+    await db.init();
+    expect((await db.getCustomers()).single['id'], results.first);
+    expect(db.auditLog().where((e) => e['action'] == 'crear:customers'),
+        hasLength(1));
+  });
   test('Authentication, persistence, pagination, cascades and reset', () async {
     expect(db.currentUser, isNull);
     await expectLater(db.getCustomers(), throwsStateError);

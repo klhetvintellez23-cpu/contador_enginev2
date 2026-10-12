@@ -111,10 +111,15 @@ class ExportHelper {
                       p['voided'] != true)) {
             movements.add(_Movement(
                 date: DateTime.parse(p['date'] as String),
-                description: 'Cobro crédito amortizado: ${p['reference']}',
+                description:
+                    '${p['direction'] == 'refund' ? 'Devolución' : 'Cobro'} crédito amortizado: ${p['reference']}',
                 client: name,
-                income: (p['amountCents'] as int) / 100,
-                expense: 0));
+                income: p['direction'] == 'refund'
+                    ? 0
+                    : (p['amountCents'] as int) / 100,
+                expense: p['direction'] == 'refund'
+                    ? (p['amountCents'] as int) / 100
+                    : 0));
           }
         }
       }

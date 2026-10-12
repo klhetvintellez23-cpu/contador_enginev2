@@ -31,7 +31,7 @@ Esta entrega evoluciona el diagnóstico de `revision-app-vs-presentacion.md`. Es
 
 ## Reglas que deben revisarse con la profesora
 
-La presentación no determina tasas, umbrales de riesgo, forma de cobrar seguro/comisión/mora ni tratamiento de anticipos. La implementación usa reglas académicas explícitas descritas en README. Los pagos adelantados cubren cuotas pactadas y no recalculan intereses por prepago. Una recomendación desfavorable impide avanzar; no hay excepción automática de gerencia. El 2FA puede activarse por cuenta; no es obligatorio en el primer acceso de las cuentas de demostración.
+La presentación no determina tasas, umbrales de riesgo ni todos los cargos. Los umbrales siguen siendo políticas internas explícitas. La adaptación posterior descrita en [Crédito Panamá](credito-panama.md) añade tasa efectiva, FECI, evidencia contractual y liquidación total con descuento de intereses futuros. Una recomendación desfavorable impide avanzar; no hay excepción automática de gerencia. El 2FA puede activarse por cuenta; no es obligatorio en el primer acceso de las cuentas de demostración.
 
 ## Límites de la verificación
 

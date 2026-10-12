@@ -1,3 +1,4 @@
+import 'support/panama_contract_fixture.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
@@ -109,7 +110,8 @@ void main() {
     await provider.fetchAll();
     expect(provider.moneyInHand, 2000);
     expect(provider.activeCapital, 0);
-    await service.formalize(id, 'c', 'Acuerdo firmado');
+    await service.formalize(id, 'c', 'Acuerdo firmado',
+        contract: testPanamaContract);
     await service.disburse(id, DateTime.now(), 'Entrega 001');
     await Future.wait([provider.fetchAll(), provider.fetchAll()]);
     expect(provider.moneyInHand, 1000);

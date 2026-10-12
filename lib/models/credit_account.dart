@@ -10,7 +10,12 @@ abstract final class PortfolioLedger {
   static int activePayments(Map state, String applicationId) => rows(
           state, 'credit_payments')
       .where((p) => p['applicationId'] == applicationId && p['voided'] != true)
-      .fold(0, (sum, p) => sum + (p['amountCents'] as int));
+      .fold(
+          0,
+          (sum, p) =>
+              sum +
+              (p['direction'] == 'refund' ? -1 : 1) *
+                  (p['amountCents'] as int));
 
   /// A reconciled opening balance may already include historical cash movements.
   /// Baselines remain fixed so later voids correctly reverse the cash received.
@@ -41,14 +46,23 @@ abstract final class PortfolioLedger {
   }
 
   static List<Map<String, dynamic>> accountBalance(Map state, Map account,
-          {DateTime? asOf}) =>
-      CreditEngine.balances(
-          rows(account, 'schedule'),
-          rows(state, 'credit_payments')
-              .where((p) => p['applicationId'] == account['applicationId'])
-              .toList(),
-          (((account['terms'] as Map)['lateFee'] as num) * 100).round(),
-          asOf ?? DateTime.now());
+      {DateTime? asOf}) {
+    final at = asOf ?? DateTime.now();
+    final settlement = account['settlement'] as Map?;
+    if (settlement != null &&
+        !DateTime.parse(settlement['date'] as String).isAfter(at)) {
+      return rows(settlement, 'closingRows');
+    }
+    return CreditEngine.balances(
+        rows(account, 'schedule'),
+        rows(state, 'credit_payments')
+            .where((p) =>
+                p['applicationId'] == account['applicationId'] &&
+                p['kind'] != 'settlement')
+            .toList(),
+        (((account['terms'] as Map)['lateFee'] as num) * 100).round(),
+        at);
+  }
 }
 
 enum CreditLifecycle { awaitingFormalization, formalized, active, legacy }

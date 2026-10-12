@@ -1,3 +1,4 @@
+import 'support/panama_contract_fixture.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
@@ -66,7 +67,8 @@ void main() {
     expect(service.balance(app), isEmpty);
     await db.insertCustomer({'id': 'c', 'name': 'Solicitante verificado'});
     await db.insertCapitalEntry({'id': 'capital', 'amount': 2000});
-    await service.formalize(id, 'c', 'Acuerdo firmado 01');
+    await service.formalize(id, 'c', 'Acuerdo firmado 01',
+        contract: testPanamaContract);
     await service.disburse(id, DateTime.now(), 'entrega-01');
     final total = service
         .balance(app)

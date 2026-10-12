@@ -7,8 +7,14 @@ Los ajustes del negocio se encuentran en Perfil. El solicitante utiliza Inicio,
 Mis solicitudes y Perfil, con un formulario por pasos.
 
 Desde **Nuevo préstamo → Simular cuotas** se pueden comparar los métodos Francés
-y Alemán con monto, tasa nominal anual y plazo mensual. Esta primera integración
-muestra el desglose de cuotas sin registrar préstamos ni modificar la cartera.
+y Alemán con monto, tasa nominal anual y plazo mensual. El simulador muestra
+tasa efectiva y desglose de cuotas con el supuesto FECI seleccionado, sin registrar préstamos.
+
+La originación nueva utiliza condiciones versión 2 con tasa efectiva, FECI
+documentado, evidencia contractual y cancelación total sin intereses futuros.
+Consulta [alcance, reglas y operación para Panamá](docs/credito-panama.md).
+Esta adaptación técnica requiere verificar el régimen y autorización del negocio;
+no es una certificación legal ni sustituye la firma y revisión del contrato.
 
 El código del proceso académico por roles y sus datos se conservan. Las cuentas
 de solicitante, analista y cumplimiento mantienen su acceso específico.
@@ -99,7 +105,8 @@ una aplicación autenticadora. Guarda el secreto TOTP de recuperación fuera de 
 5. Entra como gerencia y confirma la aprobación. La solicitud queda pendiente
    de formalización; todavía no mueve caja ni permite cobrar.
 6. Registra al cliente en Cartera si no existe. Desde el expediente, formaliza
-   el crédito vinculando al cliente verificado y la referencia del acuerdo.
+   el crédito con los datos del prestamista y deudor, el régimen aplicable y
+   constancias del contrato firmado y de la entrega de copia.
 7. Registra la entrega real, fecha y referencia. Se verifica el capital disponible,
    se activa un solo crédito y se genera el plan desde esa fecha.
 8. Registra un pago con referencia única, revisa el saldo y exporta PDF/JSON.
@@ -115,11 +122,17 @@ el borrador e invalida la evaluación anterior. El saldo cero se muestra como pr
   del mes, conservando como referencia el día original.
 - Francés: cuota base constante salvo redondeo final. Alemán: capital constante
   salvo ajuste final, interés sobre saldo.
-- Seguro fijo por mes, comisión fija en primera cuota y mora fija única por cuota
-  vencida; los valores son configurables en la solicitud, inicialmente cero.
-- Los pagos cubren cuotas en orden: mora, comisión, seguro, interés y capital.
-  Se rechazan sobrepagos y referencias activas duplicadas. Adelantar un pago cubre
-  cuotas futuras; esta versión no recalcula intereses ni bonifica seguros por prepago.
+- Seguro fijo por mes destinado a terceros y comisión propia en primera cuota.
+  En condiciones v2, mora porcentual única sobre capital impago al vencimiento;
+  los contratos v1 conservan su cargo fijo. Los cargos parten de cero.
+- FECI desglosado cuando corresponda; exención/no sujeción requieren evidencia.
+  La tasa efectiva usa TIR e incluye comisión propia; otro indicador agrega
+  seguro y FECI al costo efectivo anual.
+- Los pagos cubren cuotas en orden: mora, comisión, seguro, FECI, interés y capital.
+  Se rechazan sobrepagos y referencias activas duplicadas. La cancelación total
+  tiene un flujo separado que descuenta intereses/FECI futuros y primas de
+  períodos no iniciados, con posible devolución. La póliza determina cualquier
+  devolución adicional de seguro. Los adelantos ordinarios no reprograman cuotas.
 - DTI = (otras cuotas mensuales + cuota máxima propuesta) / ingreso mensual.
   Recomendación favorable si DTI ≤ 40% y disponible tras gastos/deudas/cuota ≥ 0.
   Gerencia puede configurar el umbral; cada evaluación conserva su versión.
@@ -131,7 +144,8 @@ el borrador e invalida la evaluación anterior. El saldo cero se muestra como pr
 
 Las escrituras del negocio y su bitácora se guardan juntas en una entrada Hive y
 se serializan para evitar cambios parciales. La migración conserva la cartera anterior.
-La cartera permite crear préstamos directamente. Ambos motores se conservan,
+La cartera permite originar créditos mensuales directamente con aprobación de
+gerencia, capacidad de pago, contrato y desembolso separados. Ambos motores se conservan,
 con una lectura común de caja, cierre diario, gráficos y reportes. Los créditos
 aprobados anteriormente conservan su plan y pagos y requieren conciliación explícita
 antes de entrar en los totales comunes. No se crea una copia en la tabla de préstamos directos.

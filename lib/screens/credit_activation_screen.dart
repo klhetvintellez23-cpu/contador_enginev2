@@ -6,7 +6,10 @@ import '../services/local_database_service.dart';
 import '../utils/app_theme.dart';
 import '../widgets/app_ui.dart';
 import '../widgets/credit_conditions.dart';
+import '../widgets/customer_registration_dialog.dart';
 import '../models/credit_engine.dart';
+import '../widgets/panama_contract_fields.dart';
+import '../utils/credit_documents.dart';
 
 class CreditActivationScreen extends StatefulWidget {
   final String applicationId;
@@ -19,11 +22,38 @@ class _CreditActivationScreenState extends State<CreditActivationScreen> {
   final service = CreditService();
   final form = GlobalKey<FormState>();
   final reference = TextEditingController();
+  Map<String, dynamic> contractData = {};
   String? customerId, error;
   DateTime? date;
   bool verified = false, busy = false;
   bool? alreadyIncluded;
   final money = NumberFormat.currency(symbol: '\$', decimalDigits: 2);
+  @override
+  void initState() {
+    super.initState();
+    final app =
+        service.applications.firstWhere((a) => a['id'] == widget.applicationId);
+    final linkedId = app['customerId']?.toString();
+    if (LocalDatabaseService.rowsOf(service.db.readPortfolio(), 'customers')
+        .any((c) => c['id'].toString() == linkedId)) {
+      customerId = linkedId;
+    }
+  }
+
+  Future<void> registerCustomer(String applicant) async {
+    final id = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => CustomerRegistrationDialog(initialName: applicant));
+    if (id != null && mounted) {
+      setState(() {
+        customerId = id;
+        verified = false;
+        error = null;
+      });
+    }
+  }
+
   @override
   void dispose() {
     reference.dispose();
@@ -63,7 +93,8 @@ class _CreditActivationScreenState extends State<CreditActivationScreen> {
       switch (state) {
         case CreditLifecycle.awaitingFormalization:
           await service.formalize(
-              widget.applicationId, customerId!, reference.text);
+              widget.applicationId, customerId!, reference.text,
+              contract: contractData);
           break;
         case CreditLifecycle.formalized:
           await service.disburse(widget.applicationId, date!, reference.text);
@@ -152,8 +183,13 @@ class _CreditActivationScreenState extends State<CreditActivationScreen> {
                                   style: TextStyle(color: AppTheme.muted)),
                               const SizedBox(height: 16),
                               DropdownButtonFormField<String>(
+                                  key:
+                                      ValueKey('verified-customer-$customerId'),
                                   initialValue: customerId,
                                   isExpanded: true,
+                                  hint: Text(customers.isEmpty
+                                      ? 'Sin clientes registrados'
+                                      : 'Selecciona un cliente'),
                                   decoration: const InputDecoration(
                                       labelText: 'Cliente verificado'),
                                   items: customers
@@ -166,15 +202,67 @@ class _CreditActivationScreenState extends State<CreditActivationScreen> {
                                   validator: (v) => v == null
                                       ? 'Selecciona un cliente.'
                                       : null,
-                                  onChanged: busy
+                                  onChanged: busy || customers.isEmpty
                                       ? null
-                                      : (v) => setState(() => customerId = v)),
-                              if (customers.isEmpty)
-                                const Padding(
-                                    padding: EdgeInsets.only(top: 12),
-                                    child: Text(
-                                        'Registra primero al cliente desde Cartera → Clientes → Añadir.')),
+                                      : (v) => setState(() {
+                                            customerId = v;
+                                            verified = false;
+                                          })),
+                              Padding(
+                                  padding: const EdgeInsets.only(top: 12),
+                                  child: Text(customers.isEmpty
+                                      ? 'Aún no hay clientes en Cartera. Registra al solicitante aquí para continuar.'
+                                      : 'Si el solicitante no aparece, registra su ficha de cliente.')),
+                              const SizedBox(height: 8),
+                              OutlinedButton.icon(
+                                  onPressed: busy
+                                      ? null
+                                      : () => registerCustomer(
+                                          app['applicant'] as String),
+                                  icon: const Icon(Icons.person_add_outlined),
+                                  label: const Text('Registrar cliente')),
                               const SizedBox(height: 18),
+                            ],
+                            if (state ==
+                                CreditLifecycle.awaitingFormalization) ...[
+                              PanamaContractFields(
+                                  onChanged: (data) => contractData = data),
+                              OutlinedButton.icon(
+                                  icon: const Icon(Icons.download),
+                                  label: const Text(
+                                      'Descargar borrador contractual'),
+                                  onPressed: busy
+                                      ? null
+                                      : () async {
+                                          try {
+                                            final selected = customers
+                                                .where((c) =>
+                                                    c['id'].toString() ==
+                                                    customerId)
+                                                .firstOrNull;
+                                            final path = await CreditDocuments
+                                                .exportContractDraft(
+                                                    app,
+                                                    contractData,
+                                                    selected?['name']
+                                                            as String? ??
+                                                        app['applicant']
+                                                            as String);
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(SnackBar(
+                                                      content: Text(
+                                                          'Borrador guardado: $path')));
+                                            }
+                                          } catch (e) {
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(SnackBar(
+                                                      content: Text('$e')));
+                                            }
+                                          }
+                                        }),
+                              const SizedBox(height: 20),
                             ],
                             TextFormField(
                                 controller: reference,
@@ -272,7 +360,7 @@ class _CreditActivationScreenState extends State<CreditActivationScreen> {
                                         CreditLifecycle.awaitingFormalization
                                     ? 'Verifiqué al cliente y el acuerdo aceptado con estas condiciones.'
                                     : state == CreditLifecycle.legacy
-                                    ? 'Verifiqué la entrega y la caja. Este crédito no está registrado también como préstamo directo.'
+                                        ? 'Verifiqué la entrega y la caja. Este crédito no está registrado también como préstamo directo.'
                                         : 'Confirmo que el monto fue entregado en la fecha indicada.'),
                                 subtitle: state == CreditLifecycle.formalized
                                     ? const Text(
